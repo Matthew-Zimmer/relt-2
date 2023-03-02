@@ -15,9 +15,9 @@ export const parser = generate(`
     = chars: ([a-zA-Z][a-zA-Z0-9_]*)
     ! { return [
       "model", "fk", "pk", "sort", 
-      "distinct", "where", "with",
+      "distinct", "where", "with", "on",
       "union", "bool", "int", "string", "float",
-      "false", "true", "join", "over", "or", "and"
+      "false", "true", "join", "over", "or", "and", "date"
       ].includes(chars[0] + chars[1].join('')) }
     { return chars[0] + chars[1].join('') }
 
@@ -34,17 +34,46 @@ export const parser = generate(`
 
   model_modifier
     = delta_model_modifier
+    / postgres_model_modifier
+    / index_model_modifier
+    / type_model_modifier
 
   delta_model_modifier
-    = "delta" __ value: expression
+    = "delta" __ value: (string_expression / env_var_expression)
     { return { kind: "DeltaModelModifier", value } }
 
+  postgres_model_modifier
+    = "postgres" __ value: (string_expression / env_var_expression)
+    { return { kind: "PostgresModelModifier", value } }
+
+  index_model_modifier
+    = "index" __ value: (string_expression / env_var_expression) __ "on" __ on: string_expression
+    { return { kind: "IndexModelModifier", value, on } }
+
+  type_model_modifier
+    = "type"
+    { return { kind: "TypeModelModifier" } }
+
   type
+    = postfix_type
+
+  postfix_type
+    = head: primitive_type tail:(_ op: ("[]" / "?" / "json") { return {
+      kind: {
+        "[]": "ArrayType",
+        "?": "OptionalType",
+        "json": "JsonType",
+      }[op],
+    }})*
+    { return tail.reduce((t, h) => ({ ...h, of: t }), head) }
+    
+  primitive_type
     = string_type
     / integer_type
     / float_type
     / boolean_type
     / identifier_type
+    / date_type
 
   string_type
     = "string"
@@ -64,7 +93,11 @@ export const parser = generate(`
 
   identifier_type
     = name: identifier
-    { return { kind: "identifierType", name } }
+    { return { kind: "IdentifierType", name } }
+
+  date_type
+    = "date" fmt: (_ @string_expression)?
+    { return { kind: "DateType", fmt: fmt === null ? undefined : fmt.value } }
 
   expression
     = pipe_expression
@@ -111,11 +144,37 @@ export const parser = generate(`
     { return { kind: "WithExpression", head: head ?? undefined, properties } }
 
   object_property
+    = assign_object_property
+    / as_object_property
+    / op_assign_object_property
+    / rename_object_property
+
+  assign_object_property
     = name: identifier _ "=" _ value: expression
-    { return { name, value } }
+    { return { kind: "AssignObjectProperty", name, value } }
+
+  as_object_property
+    = name: identifier _ "as" _ type: type
+    { return { kind: "AsObjectProperty", name, type } }
+
+  op_assign_object_property
+    = name: identifier _ op: ("??=") _ value: expression
+    { return { kind: "OpAssignObjectProperty", name, op, value } }
+
+  rename_object_property
+    = name: identifier _ ":=" _ value: expression
+    { return { kind: "RenameObjectProperty", name, value } }
 
   below_command_expression
-    = or_expression
+    = coalesce_expression
+
+  coalesce_expression
+    = head: or_expression tail:(_ op: ("??") _ right: or_expression { return {
+      kind: 'CoalesceExpression',
+      op,
+      right,
+    }})*
+    { return tail.reduce((t, h) => ({ ...h, left: t }), head) }
 
   or_expression
     = head: and_expression tail:(_ op: ("or") _ right: and_expression { return {

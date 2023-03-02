@@ -1,6 +1,5 @@
-import { Mode, writeFileSync } from "fs";
+import { writeFileSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
-import { inspect } from "util";
 import { parser } from "./grammar";
 import { scalaTemplate } from "./stage0";
 
@@ -15,6 +14,11 @@ export type Type =
   | IntegerType
   | FloatType
   | StructType
+  | IdentifierType
+  | OptionalType
+  | ArrayType
+  | JsonType
+  | DateType
 
 export interface StringType {
   kind: "StringType";
@@ -37,6 +41,31 @@ export interface StructType {
   properties: { name: string, type: Type }[];
 }
 
+export interface IdentifierType {
+  kind: "IdentifierType";
+  name: string;
+}
+
+export interface OptionalType {
+  kind: "OptionalType";
+  of: Type;
+}
+
+export interface ArrayType {
+  kind: "ArrayType";
+  of: Type;
+}
+
+export interface JsonType {
+  kind: "JsonType";
+  of: Type;
+}
+
+export interface DateType {
+  kind: "DateType";
+  fmt?: string;
+}
+
 export type Definition =
   | ModelDefinition
 
@@ -49,10 +78,28 @@ export interface ModelDefinition {
 
 export type ModelModifier =
   | DeltaModelModifier
+  | PostgresModelModifier
+  | IndexModelModifier
+  | TypeModelModifier
 
 export interface DeltaModelModifier {
   kind: "DeltaModelModifier";
-  value: Expression;
+  value: StringExpression | EnvVarExpression;
+}
+
+export interface PostgresModelModifier {
+  kind: "PostgresModelModifier";
+  value: StringExpression | EnvVarExpression;
+}
+
+export interface IndexModelModifier {
+  kind: "IndexModelModifier";
+  value: StringExpression | EnvVarExpression;
+  on: StringExpression;
+}
+
+export interface TypeModelModifier {
+  kind: "TypeModelModifier";
 }
 
 export type Expression =
@@ -77,6 +124,7 @@ export type Expression =
   | IdentifierExpression
   | TypeObjectExpression
   | GroupExpression
+  | CoalesceExpression
 
 export interface PipeExpression {
   kind: "PipeExpression";
@@ -120,7 +168,45 @@ export interface UnionExpression {
 export interface WithExpression {
   kind: "WithExpression";
   head?: Expression;
-  properties: { name: string, value: Expression }[];
+  properties: ObjectProperty[];
+}
+
+export type ObjectProperty =
+  | AssignObjectProperty
+  | AsObjectProperty
+  | OpAssignObjectProperty
+  | RenameObjectProperty
+
+export interface AssignObjectProperty {
+  kind: "AssignObjectProperty";
+  name: string;
+  value: Expression;
+}
+
+export interface AsObjectProperty {
+  kind: "AsObjectProperty";
+  name: string;
+  type: Type;
+}
+
+export interface OpAssignObjectProperty {
+  kind: "OpAssignObjectProperty";
+  name: string;
+  op: "??=";
+  value: Expression;
+}
+
+export interface RenameObjectProperty {
+  kind: "RenameObjectProperty";
+  name: string;
+  value: Expression;
+}
+
+export interface CoalesceExpression {
+  kind: "CoalesceExpression";
+  left: Expression;
+  op: "??";
+  right: Expression;
 }
 
 export interface OrExpression {
@@ -224,6 +310,7 @@ export function children(e: Expression): Expression[] {
     case "AddExpression":
     case "MulExpression":
     case "DotExpression":
+    case "CoalesceExpression":
       return [e.left, e.right]
     case "WhereExpression": return e.head === undefined ? [e.condition] : [e.head, e.condition];
     case "SortExpression": return e.head === undefined ? e.columns : [e.head, ...e.columns];
@@ -235,8 +322,18 @@ export function children(e: Expression): Expression[] {
       else if (e.on === undefined) return [e.head, e.other];
       else return [e.head, e.on, e.other];
     }
-    case "WithExpression":
-      return e.head === undefined ? e.properties.map(x => x.value) : [e.head, ...e.properties.map(x => x.value)];
+    case "WithExpression": {
+      const fromProps = (x: ObjectProperty): Expression[] => {
+        switch (x.kind) {
+          case "AsObjectProperty": return [];
+          case "AssignObjectProperty":
+          case "OpAssignObjectProperty":
+          case "RenameObjectProperty":
+            return [x.value];
+        }
+      }
+      return e.head === undefined ? e.properties.flatMap(fromProps) : [e.head, ...e.properties.flatMap(fromProps)];
+    }
   }
 }
 
@@ -259,6 +356,7 @@ export function fromChildren(e: Expression, children: Expression[]): Expression 
     case "AddExpression":
     case "MulExpression":
     case "DotExpression":
+    case "CoalesceExpression":
       return { ...e, left: children[0], right: children[1] };
     case "WhereExpression": return e.head === undefined ? { ...e, condition: children[0] } : { ...e, head: children[0], condition: children[1] };
     case "SortExpression": return e.head === undefined ? { ...e, columns: children as IdentifierExpression[] } : { ...e, head: children[0], columns: children.slice(1) as IdentifierExpression[] };
@@ -270,10 +368,21 @@ export function fromChildren(e: Expression, children: Expression[]): Expression 
       else if (e.on === undefined) return { ...e, head: children[0], other: children[1] };
       else return { ...e, head: children[0], on: children[1] as GroupExpression, other: children[2] };
     }
-    case "WithExpression":
+    case "WithExpression": {
+      const makeProps = (x: ObjectProperty, i: number): ObjectProperty => {
+        switch (x.kind) {
+          case "AsObjectProperty":
+            return x;
+          case "AssignObjectProperty":
+          case "OpAssignObjectProperty":
+          case "RenameObjectProperty":
+            return { ...x, value: children[i] };
+        }
+      };
       return e.head === undefined ?
-        { ...e, properties: e.properties.map((x, i) => ({ name: x.name, value: children[i] })) } :
-        { ...e, head: children[0], properties: e.properties.map((x, i) => ({ name: x.name, value: children[i + 1] })) };
+        { ...e, properties: e.properties.map(makeProps) } :
+        { ...e, head: children[0], properties: e.properties.map(makeProps) };
+    }
   }
 }
 
@@ -299,6 +408,21 @@ const quote = wrap("\"");
 const cap = (x: string) => x.length === 0 ? "" : `${x[0].toUpperCase()}${x.slice(1)}`;
 const line = <T>(f: (x: T) => string) => end(f, '\n');
 
+const formatType = (t: Type): string => {
+  switch (t.kind) {
+    case "StringType": return "string";
+    case "BooleanType": return "bool";
+    case "IntegerType": return "int";
+    case "FloatType": return "float";
+    case "StructType": return "struct ?";
+    case "IdentifierType": return t.name;
+    case "ArrayType": return `${formatType(t.of)}[]`;
+    case "OptionalType": return `${formatType(t.of)}?`;
+    case "JsonType": return `${formatType(t.of)} json`;
+    case "DateType": return `date${t.fmt ? "" : `"${t.fmt}"`}`;
+  }
+};
+
 export function format(m: Module): string {
   let indent = '';
 
@@ -310,15 +434,7 @@ export function format(m: Module): string {
     return value;
   }
 
-  const formatType = (t: Type): string => {
-    switch (t.kind) {
-      case "StringType": return "string";
-      case "BooleanType": return "bool";
-      case "IntegerType": return "int";
-      case "FloatType": return "float";
-      case "StructType": return "struct ?";
-    }
-  };
+
 
   const formatDef = (d: Definition): string => {
     switch (d.kind) {
@@ -331,6 +447,12 @@ export function format(m: Module): string {
     switch (x.kind) {
       case "DeltaModelModifier":
         return `delta ${formatExpr(x.value)}`;
+      case "IndexModelModifier":
+        return `index ${formatExpr(x.value)} on ${formatExpr(x.on)}`;
+      case "PostgresModelModifier":
+        return `postgres ${formatExpr(x.value)}`;
+      case "TypeModelModifier":
+        return `type`;
     }
   };
 
@@ -353,12 +475,24 @@ export function format(m: Module): string {
       case "UnionExpression":
         return `${conditionally(e.head, formatExpr)} union ${formatExpr(e.other)}`;
       case "WithExpression":
-        return `${conditionally(e.head, formatExpr)} with ${withIndentation(e, e => `{\n${e.properties.map(end(x => `${indent}${x.name}: ${formatExpr(x.value)}`, ',\n')).join('')}}`)}`;
+        return `${conditionally(e.head, formatExpr)} with ${withIndentation(e, e => `{\n${e.properties.map(end(x => {
+          switch (x.kind) {
+            case "AsObjectProperty":
+              return `${indent}${x.name} as ${formatType(x.type)}`;
+            case "AssignObjectProperty":
+              return `${indent}${x.name} = ${formatExpr(x.value)}`;
+            case "OpAssignObjectProperty":
+              return `${indent}${x.name} ${x.op} ${formatExpr(x.value)}`;
+            case "RenameObjectProperty":
+              return `${indent}${x.name} := ${formatExpr(x.value)}`;
+          }
+        }, ',\n')).join('')}}`)}`;
       case "OrExpression":
       case "AndExpression":
       case "CmpExpression":
       case "AddExpression":
       case "MulExpression":
+      case "CoalesceExpression":
         return `${formatExpr(e.left)} ${e.op} ${formatExpr(e.right)}`;
       case "DotExpression":
         return `${formatExpr(e.left)}${e.op}${formatExpr(e.right)}`;
@@ -423,76 +557,76 @@ const identity = {
   }
 } satisfies Transformation;
 
-const resolveNames = {
-  name: "resolveNames",
-  transform(m) {
-    const models = new Set<string>(m.definitions.filter(is("ModelDefinition")).map(x => x.name));
-    let model = '';
-    let alreadyResolved = false;
+// const resolveNames = {
+//   name: "resolveNames",
+//   transform(m) {
+//     const models = new Set<string>(m.definitions.filter(is("ModelDefinition")).map(x => x.name));
+//     let model = '';
+//     let alreadyResolved = false;
 
-    const resolveNamesDef = (d: Definition): Definition => {
-      switch (d.kind) {
-        case "ModelDefinition": {
-          model = d.name;
-          const x = { ...d, expression: resolveNamesExpr(d.expression) };
-          model = '';
-          return x;
-        }
-      }
-    };
+//     const resolveNamesDef = (d: Definition): Definition => {
+//       switch (d.kind) {
+//         case "ModelDefinition": {
+//           model = d.name;
+//           const x = { ...d, expression: resolveNamesExpr(d.expression) };
+//           model = '';
+//           return x;
+//         }
+//       }
+//     };
 
-    const resolveNamesExpr = (e: Expression): Expression => {
-      switch (e.kind) {
-        case "StringExpression":
-        case "IntegerExpression":
-        case "FloatExpression":
-        case "BooleanExpression":
-        case "EnvVarExpression":
-        case "TypeObjectExpression":
-          return e;
+//     const resolveNamesExpr = (e: Expression): Expression => {
+//       switch (e.kind) {
+//         case "StringExpression":
+//         case "IntegerExpression":
+//         case "FloatExpression":
+//         case "BooleanExpression":
+//         case "EnvVarExpression":
+//         case "TypeObjectExpression":
+//           return e;
 
-        case "GroupExpression":
-          return { ...e, value: resolveNamesExpr(e.value) };
+//         case "GroupExpression":
+//           return { ...e, value: resolveNamesExpr(e.value) };
 
-        case "WithExpression":
-          return { kind: "WithExpression", ...conditionally(e, 'head', resolveNamesExpr), properties: e.properties.map(x => ({ name: x.name, value: resolveNamesExpr(x.value) })) };
+//         case "WithExpression":
+//           return { kind: "WithExpression", ...conditionally(e, 'head', resolveNamesExpr), properties: e.properties.map(x => ({ name: x.name, value: resolveNamesExpr(x.value) })) };
 
-        case "OrExpression":
-        case "AndExpression":
-        case "CmpExpression":
-        case "AddExpression":
-        case "MulExpression":
-        case "PipeExpression":
-          return { ...e, left: resolveNamesExpr(e.left), right: resolveNamesExpr(e.right) };
+//         case "OrExpression":
+//         case "AndExpression":
+//         case "CmpExpression":
+//         case "AddExpression":
+//         case "MulExpression":
+//         case "PipeExpression":
+//           return { ...e, left: resolveNamesExpr(e.left), right: resolveNamesExpr(e.right) };
 
-        case "WhereExpression":
-          return { ...e, condition: resolveNamesExpr(e.condition), ...conditionally(e, 'head', resolveNamesExpr) };
-        case "SortExpression":
-          return { ...e, columns: e.columns.map(resolveNamesExpr) as IdentifierExpression[], ...conditionally(e, 'head', resolveNamesExpr) };
-        case "OverExpression":
-          return { ...e, column: resolveNamesExpr(e.column), ...conditionally(e, 'head', resolveNamesExpr) };
-        case "JoinExpression":
-          return { ...e, other: resolveNamesExpr(e.other), ...conditionally(e, 'head', resolveNamesExpr), ...conditionally(e, 'on', resolveNamesExpr) };
-        case "UnionExpression":
-          return { ...e, other: resolveNamesExpr(e.other), ...conditionally(e, 'head', resolveNamesExpr) };
+//         case "WhereExpression":
+//           return { ...e, condition: resolveNamesExpr(e.condition), ...conditionally(e, 'head', resolveNamesExpr) };
+//         case "SortExpression":
+//           return { ...e, columns: e.columns.map(resolveNamesExpr) as IdentifierExpression[], ...conditionally(e, 'head', resolveNamesExpr) };
+//         case "OverExpression":
+//           return { ...e, column: resolveNamesExpr(e.column), ...conditionally(e, 'head', resolveNamesExpr) };
+//         case "JoinExpression":
+//           return { ...e, other: resolveNamesExpr(e.other), ...conditionally(e, 'head', resolveNamesExpr), ...conditionally(e, 'on', resolveNamesExpr) };
+//         case "UnionExpression":
+//           return { ...e, other: resolveNamesExpr(e.other), ...conditionally(e, 'head', resolveNamesExpr) };
 
-        case "DotExpression": {
-          alreadyResolved = true;
-          const x = { ...e, left: resolveNamesExpr(e.left), right: resolveNamesExpr(e.right) };
-          alreadyResolved = false;
-          return x;
-        }
+//         case "DotExpression": {
+//           alreadyResolved = true;
+//           const x = { ...e, left: resolveNamesExpr(e.left), right: resolveNamesExpr(e.right) };
+//           alreadyResolved = false;
+//           return x;
+//         }
 
-        case "IdentifierExpression": {
-          if (models.has(e.name) || alreadyResolved) return e;
-          return { kind: "DotExpression", left: { kind: "IdentifierExpression", name: model }, op: ".", right: e };
-        }
-      }
-    };
+//         case "IdentifierExpression": {
+//           if (models.has(e.name) || alreadyResolved) return e;
+//           return { kind: "DotExpression", left: { kind: "IdentifierExpression", name: model }, op: ".", right: e };
+//         }
+//       }
+//     };
 
-    return { kind: "Module", definitions: m.definitions.map(resolveNamesDef) };
-  }
-} satisfies Transformation;
+//     return { kind: "Module", definitions: m.definitions.map(resolveNamesDef) };
+//   }
+// } satisfies Transformation;
 
 const noPipes = {
   name: "noPipes",
@@ -616,6 +750,11 @@ function typeEquals(l: Type, r: Type): boolean {
     case "FloatType": return r.kind === "FloatType";
     case "IntegerType": return r.kind === "IntegerType";
     case "StringType": return r.kind === "StringType";
+    case "IdentifierType": return r.kind === "IdentifierType" && l.name === r.name;
+    case "ArrayType": return r.kind === "ArrayType" && typeEquals(l.of, r.of);
+    case "OptionalType": return r.kind === "OptionalType" && typeEquals(l.of, r.of);
+    case "DateType": return r.kind === "DateType";
+    case "JsonType": return typeEquals(r, l.of); // TODO think about this and check if it is trying to be too smart
     case "StructType":
       switch (r.kind) {
         case "StructType": {
@@ -646,7 +785,9 @@ const types = {
   bool: { kind: "BooleanType" } satisfies BooleanType,
   int: { kind: "IntegerType" } satisfies IntegerType,
   float: { kind: "FloatType" } satisfies FloatType,
+  date: { kind: "DateType" } satisfies DateType,
   string: { kind: "StringType" } satisfies StringType,
+  opt: (of: Type) => ({ kind: "OptionalType", of }) satisfies OptionalType,
 };
 
 function overload(args: Type[], params: Type[], res: Type): Type | undefined {
@@ -658,64 +799,168 @@ function overload(args: Type[], params: Type[], res: Type): Type | undefined {
 
 function opTypeCheck(l: Type, op: string, r: Type): Type | undefined {
   switch (op) {
-    case "or": return overload([l, r], [types.bool, types.bool], types.bool);
-    case "and": return overload([l, r], [types.bool, types.bool], types.bool);
-    case "==": return overload([], [], types.bool);
-    case "!=": return overload([], [], types.bool);
+    case "??": {
+      if (l.kind !== "OptionalType") return undefined;
+      if (!typeEquals(l.of, r)) return undefined;
+      return l.of;
+    }
+    case "or": return (undefined
+      || overload([l, r], [types.bool, types.int], types.bool)
+      || overload([l, r], [types.opt(types.bool), types.opt(types.bool)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.bool), types.bool], types.opt(types.bool))
+      || overload([l, r], [types.bool, types.opt(types.bool)], types.opt(types.bool))
+    );
+    case "and": return (undefined
+      || overload([l, r], [types.bool, types.int], types.bool)
+      || overload([l, r], [types.opt(types.bool), types.opt(types.bool)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.bool), types.bool], types.opt(types.bool))
+      || overload([l, r], [types.bool, types.opt(types.bool)], types.opt(types.bool))
+    );
+    case "==": return (undefined
+      || overload([l, r], [r, l], types.bool)
+      || overload([l, r], [types.opt(r), l], types.opt(types.bool))
+      || overload([l, r], [r, types.opt(l)], types.opt(types.bool))
+      || overload([l, r], [types.opt(r), types.opt(l)], types.opt(types.bool))
+    );
+    case "!=": return (undefined
+      || overload([l, r], [r, l], types.bool)
+      || overload([l, r], [types.opt(r), l], types.opt(types.bool))
+      || overload([l, r], [r, types.opt(l)], types.opt(types.bool))
+      || overload([l, r], [types.opt(r), types.opt(l)], types.opt(types.bool))
+    );
     case "<=": return (undefined
       || overload([l, r], [types.int, types.int], types.bool)
-      || overload([l, r], [types.float, types.int], types.bool)
-      || overload([l, r], [types.int, types.float], types.bool)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.bool))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.bool))
+
       || overload([l, r], [types.float, types.float], types.bool)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.bool))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.bool))
+
+      || overload([l, r], [types.date, types.date], types.bool)
+      || overload([l, r], [types.opt(types.date), types.opt(types.date)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.date), types.date], types.opt(types.bool))
+      || overload([l, r], [types.date, types.opt(types.date)], types.opt(types.bool))
     );
     case ">=": return (undefined
       || overload([l, r], [types.int, types.int], types.bool)
-      || overload([l, r], [types.float, types.int], types.bool)
-      || overload([l, r], [types.int, types.float], types.bool)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.bool))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.bool))
+
       || overload([l, r], [types.float, types.float], types.bool)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.bool))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.bool))
+
+      || overload([l, r], [types.date, types.date], types.bool)
+      || overload([l, r], [types.opt(types.date), types.opt(types.date)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.date), types.date], types.opt(types.bool))
+      || overload([l, r], [types.date, types.opt(types.date)], types.opt(types.bool))
     );
     case "<": return (undefined
       || overload([l, r], [types.int, types.int], types.bool)
-      || overload([l, r], [types.float, types.int], types.bool)
-      || overload([l, r], [types.int, types.float], types.bool)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.bool))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.bool))
+
       || overload([l, r], [types.float, types.float], types.bool)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.bool))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.bool))
+
+      || overload([l, r], [types.date, types.date], types.bool)
+      || overload([l, r], [types.opt(types.date), types.opt(types.date)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.date), types.date], types.opt(types.bool))
+      || overload([l, r], [types.date, types.opt(types.date)], types.opt(types.bool))
     );
     case ">": return (undefined
       || overload([l, r], [types.int, types.int], types.bool)
-      || overload([l, r], [types.float, types.int], types.bool)
-      || overload([l, r], [types.int, types.float], types.bool)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.bool))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.bool))
+
       || overload([l, r], [types.float, types.float], types.bool)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.bool))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.bool))
+
+      || overload([l, r], [types.date, types.date], types.bool)
+      || overload([l, r], [types.opt(types.date), types.opt(types.date)], types.opt(types.bool))
+      || overload([l, r], [types.opt(types.date), types.date], types.opt(types.bool))
+      || overload([l, r], [types.date, types.opt(types.date)], types.opt(types.bool))
     );
     case "+": return (undefined
       || overload([l, r], [types.int, types.int], types.int)
-      || overload([l, r], [types.float, types.int], types.float)
-      || overload([l, r], [types.int, types.float], types.float)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.int))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.int))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.int))
+
       || overload([l, r], [types.float, types.float], types.float)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.float))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.float))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.float))
+
+      || overload([l, r], [types.date, types.date], types.date)
+      || overload([l, r], [types.opt(types.date), types.opt(types.date)], types.opt(types.date))
+      || overload([l, r], [types.opt(types.date), types.date], types.opt(types.date))
+      || overload([l, r], [types.date, types.opt(types.date)], types.opt(types.date))
+
       || overload([l, r], [types.string, types.string], types.string)
+      || overload([l, r], [types.opt(types.string), types.opt(types.string)], types.opt(types.string))
+      || overload([l, r], [types.opt(types.string), types.string], types.opt(types.string))
+      || overload([l, r], [types.string, types.opt(types.string)], types.opt(types.string))
     );
     case "-": return (undefined
       || overload([l, r], [types.int, types.int], types.int)
-      || overload([l, r], [types.float, types.int], types.float)
-      || overload([l, r], [types.int, types.float], types.float)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.int))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.int))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.int))
+
       || overload([l, r], [types.float, types.float], types.float)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.float))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.float))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.float))
+
+      || overload([l, r], [types.date, types.date], types.date)
+      || overload([l, r], [types.opt(types.date), types.opt(types.date)], types.opt(types.date))
+      || overload([l, r], [types.opt(types.date), types.date], types.opt(types.date))
+      || overload([l, r], [types.date, types.opt(types.date)], types.opt(types.date))
     );
     case "*": return (undefined
       || overload([l, r], [types.int, types.int], types.int)
-      || overload([l, r], [types.float, types.int], types.float)
-      || overload([l, r], [types.int, types.float], types.float)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.int))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.int))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.int))
+
       || overload([l, r], [types.float, types.float], types.float)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.float))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.float))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.float))
     );
     case "/": return (undefined
       || overload([l, r], [types.int, types.int], types.int)
-      || overload([l, r], [types.float, types.int], types.float)
-      || overload([l, r], [types.int, types.float], types.float)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.int))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.int))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.int))
+
       || overload([l, r], [types.float, types.float], types.float)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.float))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.float))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.float))
     );
     case "%": return (undefined
       || overload([l, r], [types.int, types.int], types.int)
-      || overload([l, r], [types.float, types.int], types.float)
-      || overload([l, r], [types.int, types.float], types.float)
+      || overload([l, r], [types.opt(types.int), types.opt(types.int)], types.opt(types.int))
+      || overload([l, r], [types.opt(types.int), types.int], types.opt(types.int))
+      || overload([l, r], [types.int, types.opt(types.int)], types.opt(types.int))
+
       || overload([l, r], [types.float, types.float], types.float)
+      || overload([l, r], [types.opt(types.float), types.opt(types.float)], types.opt(types.float))
+      || overload([l, r], [types.opt(types.float), types.float], types.opt(types.float))
+      || overload([l, r], [types.float, types.opt(types.float)], types.opt(types.float))
     );
   }
 }
@@ -768,7 +1013,8 @@ class TypeChecker {
       case "AndExpression":
       case "AddExpression":
       case "CmpExpression":
-      case "MulExpression": {
+      case "MulExpression":
+      case "CoalesceExpression": {
         const l = this.typeCheckExpr(x.left);
         const r = this.typeCheckExpr(x.right);
         const t = opTypeCheck(l, x.op, r);
@@ -802,7 +1048,8 @@ class TypeChecker {
         assertExpectation(is('StructType')(l), `Left side of join needs to be a struct type`);
         const oldCtx = new Map(this.ctx);
         this.ctx = new Map((l as StructType).properties.map(x => [x.name, x.type]));
-        this.typeCheckExpr(x.condition);
+        const c = this.typeCheckExpr(x.condition);
+        assertExpectation(typeEquals(c, types.bool), `Where condition needs to be a bool got ${formatType(c)}`);
         this.ctx = oldCtx;
         return l;
       }
@@ -841,7 +1088,8 @@ export type ScalaType =
   | { kind: "ScalaStringType" }
   | { kind: "ScalaIdentifierType", name: string }
   | { kind: "ScalaDotType", left: ScalaType, right: ScalaType }
-  | { kind: "ScalaArrayType", of: ScalaType }
+  | { kind: "ScalaOfType", type: ScalaType, of: ScalaType }
+  | { kind: "ScalaDateType" }
 
 export interface SparkHandler {
   name: string;
@@ -849,7 +1097,7 @@ export interface SparkHandler {
   combine: string;
   create?: SparkTableFunction;
   storage?: SparkStorage;
-  plans: Record<string, SparkPlan>;
+  plans: SparkPlans;
   consumes: string[];
   feeds: string[];
   hasCache: boolean;
@@ -865,18 +1113,27 @@ export interface SparkPlan {
   typeArgs: string[];
 }
 
+export interface SparkPlans {
+  invalidatePlan?: SparkPlan;
+  storePlan?: SparkPlan;
+  refreshPlan?: SparkPlan;
+  fetchPlan?: SparkPlan;
+  derivePlan?: SparkPlan;
+}
+
 export type SparkTableFunction =
   | { kind: "SparkJoinFunction", lIdx: number, rIdx: number, on: SparkExpression, type: "inner" | "left" | "right", typeName: string }
   | { kind: "SparkUnionFunction", lIdx: number, rIdx: number, }
   | { kind: "SparkWhereFunction", idx: number, cond: SparkExpression }
   | { kind: "SparkSortFunction", idx: number, columns: string[], type: "asc" | "desc" }
-  | { kind: "SparkWithColumnFunction", idx: number, properties: { name: string, value: SparkExpression }[], typeName: string }
+  | { kind: "SparkWithColumnFunction", idx: number, properties: { name: string, value: SparkExpression, rename: boolean }[], typeName: string }
 
 export type SparkExpression =
   | { kind: "SparkLiteralExpression", value: string }
   | { kind: "SparkColumnExpression", value: string }
   | { kind: "SparkGroupExpression", value: SparkExpression }
   | { kind: "SparkBinaryExpression", left: SparkExpression, op: string, right: SparkExpression }
+  | { kind: "SparkAppExpression", func: string, args: SparkExpression[] }
 
 function toScalaCaseClass(x: ModelDefinition): ScalaCaseClass {
   const t = tc.typeCheck(x);
@@ -890,6 +1147,11 @@ function toScalaType(x: Type): ScalaType {
     case "IntegerType": return { kind: "ScalaIntType" };
     case "StringType": return { kind: "ScalaStringType" };
     case "StructType": assertInvariant(false, 'Should not be able to convert a struct type to scala'); throw '';
+    case "IdentifierType": return { kind: "ScalaDotType", left: { kind: "ScalaIdentifierType", name: "Types" }, right: { kind: "ScalaIdentifierType", name: x.name } };
+    case "JsonType": return toScalaType(x.of);
+    case "DateType": return { kind: "ScalaDateType" };
+    case "ArrayType": return { kind: "ScalaOfType", type: { kind: "ScalaIdentifierType", name: "Array" }, of: toScalaType(x.of) };
+    case "OptionalType": return { kind: "ScalaOfType", type: { kind: "ScalaIdentifierType", name: "Option" }, of: toScalaType(x.of) };
   }
 }
 
@@ -897,24 +1159,66 @@ function createStorage(x: ModelDefinition): SparkStorage | undefined {
   let storage: SparkStorage | undefined = undefined;
 
   for (const m of x.modifiers) {
-    if (m.kind === "DeltaModelModifier") {
-      assertExpectation(storage === undefined, `Cannot have multiple storage modifiers`);
-      const name = `DeltaFileStorage`;
-      if (m.value.kind === "StringExpression") {
-        storage = {
-          name,
-          args: [`"${m.value.value}"`],
-        };
+    switch (m.kind) {
+      case "DeltaModelModifier": {
+        assertExpectation(storage === undefined, `Cannot have multiple storage modifiers`);
+        const name = `DeltaFileStorage`;
+        switch (m.value.kind) {
+          case "StringExpression":
+            storage = {
+              name,
+              args: [`"${m.value.value}"`],
+            };
+            break;
+          case "EnvVarExpression":
+            storage = {
+              name,
+              args: [`"${m.value.value}"`], // TODO emit scala code which reads the env
+            };
+            break;
+        }
+        break;
       }
-      else if (m.value.kind === "EnvVarExpression") {
-        storage = {
-          name,
-          args: [`"${m.value.value}"`], // TODO emit scala code which reads the env
-        };
+      case "PostgresModelModifier": {
+        assertExpectation(storage === undefined, `Cannot have multiple storage modifiers`);
+        const name = `PostgresTableStorage`;
+        switch (m.value.kind) {
+          case "StringExpression":
+            storage = {
+              name,
+              args: [`"${m.value.value}"`],
+            };
+            break;
+          case "EnvVarExpression":
+            storage = {
+              name,
+              args: [`"${m.value.value}"`], // TODO emit scala code which reads the env
+            };
+            break;
+        }
+        break;
       }
-      else {
-        assertExpectation(false, `Delta needs either a string literal or env var literal`); throw '';
+      case "IndexModelModifier": {
+        assertExpectation(storage === undefined, `Cannot have multiple storage modifiers`);
+        const name = `IndexerStorage`;
+        switch (m.value.kind) {
+          case "StringExpression":
+            storage = {
+              name,
+              args: [`"${m.value.value}"`, `"${m.on.value}"`],
+            };
+            break;
+          case "EnvVarExpression":
+            storage = {
+              name,
+              args: [`"${m.value.value}"`, `"${m.on.value}"`], // TODO emit scala code which reads the env
+            };
+            break;
+        }
+        break;
       }
+      case "TypeModelModifier":
+        break;
     }
   }
 
@@ -922,6 +1226,9 @@ function createStorage(x: ModelDefinition): SparkStorage | undefined {
 }
 
 function isSourceType(x: ModelDefinition): boolean {
+  if (x.modifiers.some(x => x.kind === "TypeModelModifier"))
+    return false;
+
   const expr = (x: Expression): boolean => {
     switch (x.kind) {
       case "TypeObjectExpression": return true;
@@ -931,17 +1238,31 @@ function isSourceType(x: ModelDefinition): boolean {
   return expr(x.expression);
 }
 
-function makePlans(x: ModelDefinition, isSource: boolean, hasCache: boolean): Record<string, SparkPlan> {
+function makePlans(x: ModelDefinition, isSource: boolean, hasCache: boolean): SparkPlans {
+  const mods = new Set(x.modifiers.map(x => x.kind));
+
+  if (mods.has('TypeModelModifier')) return {};
+
+  const hasInvalidate = !isSource && hasCache && !mods.has('IndexModelModifier');
+  const hasStore = hasCache;
+  const hasFetch = isSource || hasCache;
+  const hasRefresh = isSource;
+  const hasDerive = !isSource;
+
   return {
-    ...!hasCache ? {} : {
+    ...!hasInvalidate ? {} : {
       invalidatePlan: { args: ["storage"], typeArgs: ['DeltaTypes', 'Types'] },
+    },
+    ...!hasStore ? {} : {
       storePlan: { args: ["storage", "create", "combine"], typeArgs: ['DeltaTypes', 'Types'] },
+    },
+    ...!hasFetch ? {} : {
       fetchPlan: { args: ["storage", "combine"], typeArgs: ['DeltaTypes', 'Types'] },
     },
-    ...isSource ? {
+    ...!hasRefresh ? {} : {
       refreshPlan: { args: ["storage", "combine"], typeArgs: ['DeltaTypes', 'Types'] },
-      fetchPlan: { args: ["storage", "combine"], typeArgs: ['DeltaTypes', 'Types'] },
-    } : {
+    },
+    ...!hasDerive ? {} : {
       derivePlan: { args: ["create", "combine"], typeArgs: ['DeltaTypes'] }
     },
   };
@@ -981,7 +1302,11 @@ function makeCreateFunction(x: ModelDefinition, indices: Map<string, number>, ma
       return {
         kind: "SparkWithColumnFunction",
         idx: indices.get((x.expression.head as IdentifierExpression).name)!,
-        properties: x.expression.properties.map(x => ({ name: x.name, value: makeSparkExpression(x.value) })),
+        properties: x.expression.properties.map(x => {
+          switch (x.kind) {
+            case "AsObjectProperty"
+          }
+        }),
         typeName: mapping.get(x.name)!,
       };
     case "OverExpression":
@@ -1005,6 +1330,7 @@ function makeSparkExpression(x: Expression): SparkExpression {
     case "CmpExpression": return { kind: "SparkBinaryExpression", left: makeSparkExpression(x.left), op: { "==": "===", "!=": "!=", "<=": "<=", ">=": ">=", "<": "<", ">": ">" }[x.op], right: makeSparkExpression(x.right) };
     case "MulExpression": return { kind: "SparkBinaryExpression", left: makeSparkExpression(x.left), op: x.op, right: makeSparkExpression(x.right) };
     case "OrExpression": return { kind: "SparkBinaryExpression", left: makeSparkExpression(x.left), op: x.op, right: makeSparkExpression(x.right) };
+    case "CoalesceExpression": return { kind: "SparkBinaryExpression", left: makeSparkExpression(x.left), op: ".", right: { kind: "SparkAppExpression", func: "getOrElse", args: [makeSparkExpression(x.right)] } };
 
     case "OverExpression":
     case "PipeExpression":
@@ -1021,7 +1347,7 @@ function makeSparkExpression(x: Expression): SparkExpression {
 
 function toSparkHandler(x: ModelDefinition, indices: Map<string, number>, mapping: Map<string, string>): SparkHandler {
   const idx = indices.get(x.name)!;
-  const count = indices.size;
+  const count = mapping.size;
   const storage = createStorage(x);
   const isSource = isSourceType(x);
   const hasCache = storage !== undefined && !isSource;
@@ -1064,7 +1390,8 @@ function formatScalaType(x: ScalaType): string {
     case "ScalaIdentifierType": return x.name;
     case "ScalaIntType": return "Int";
     case "ScalaStringType": return "String";
-    case "ScalaArrayType": return `Array[${formatScalaType(x.of)}]`;
+    case "ScalaOfType": return `${formatScalaType(x.type)}[${formatScalaType(x.of)}]`;
+    case "ScalaDateType": return `Date`;
   }
 }
 
@@ -1088,7 +1415,7 @@ function formatSparkHandler(x: SparkHandler): string {
       `private val storage = new ${x.storage.name}[Types.${x.typeName}](${x.storage.args.join(', ')})`
     }
 
-    ${Object.entries(x.plans).map(([k, v]) => `private val ${k} = new ${cap(k)}[DeltaTypes.Datasets, ${v.typeArgs.map(a => `${a}.${x.typeName}`)}](${v.args.map(x => `this.${x}`).join(',')})\n`).join('')}
+    ${Object.entries(x.plans).map(([k, v]: [string, SparkPlan]) => `private val ${k} = new ${cap(k)}[DeltaTypes.Datasets, ${v.typeArgs.map(a => `${a}.${x.typeName}`)}](${v.args.map(x => `this.${x}`).join(',')})\n`).join('')}
 
     val name = "${x.name}"
     val consumes = Array[String](${x.consumes.map(quote).join(', ')})
@@ -1116,10 +1443,15 @@ function formatSparkExpression(x: SparkExpression): string {
     case "SparkColumnExpression": return `col("${x.value}")`;
     case "SparkLiteralExpression": return `lit(${x.value})`;
     case "SparkGroupExpression": return `(${formatSparkExpression(x.value)})`;
+    case "SparkAppExpression": return `${x.func}(${x.args.map(formatSparkExpression).join(', ')})`;
   }
 }
 
-function makeScalaCaseClasses(models: ModelDefinition[]): [ScalaCaseClass[], Map<string, string>] {
+function justSparkModels(x: ModelDefinition[]): ModelDefinition[] {
+  return x.filter(x => x.modifiers.findIndex(x => x.kind === "TypeModelModifier") === -1);;
+}
+
+function makeScalaCaseClasses(models: ModelDefinition[]): [ScalaCaseClass[], ScalaCaseClass[], Map<string, string>] {
   const classes = new Map<string, number>();
   const mapping = new Map<string, string>();
   let skip = false;
@@ -1136,26 +1468,37 @@ function makeScalaCaseClasses(models: ModelDefinition[]): [ScalaCaseClass[], Map
     }
     if (!skip) {
       classes.set(model.name, i);
-      mapping.set(model.name, model.name);
+      // model is a spark model, aka not a type model
+      if (justSparkModels([model]).length === 1)
+        mapping.set(model.name, model.name);
     }
   }
 
-  return [[...classes.values()].map(x => models[x]).map(toScalaCaseClass), mapping];
+  const uniqueModels = [...classes.values()].map(x => models[x]);
+  const sparkModels = justSparkModels(uniqueModels);
+
+  return [
+    sparkModels.map(toScalaCaseClass),
+    uniqueModels.map(toScalaCaseClass),
+    mapping
+  ];
 }
 
 export function emit(m: Module): string {
   const models = m.definitions.filter(is("ModelDefinition"));
-  const indices = new Map(models.map((x, i) => [x.name, i]));
+  const sparkModels = justSparkModels(models);
+  const indices = new Map(sparkModels.map((x, i) => [x.name, i]));
 
-  const [types, mapping] = makeScalaCaseClasses(models);
-  const deltaTypes = types.map(addDeltaProperty);
-  const handlers = models.map(x => toSparkHandler(x, indices, mapping));
+
+  const [sparkTypes, allTypes, mapping] = makeScalaCaseClasses(models);
+  const deltaTypes = sparkTypes.map(addDeltaProperty);
+  const handlers = sparkModels.map(x => toSparkHandler(x, indices, mapping));
 
   return scalaTemplate({
     packageName: "Example",
     names: [...mapping.values()],
-    allNames: models.map(x => x.name),
-    types: types.map(formatScalaCaseClass),
+    allNames: sparkModels.map(x => x.name),
+    types: allTypes.map(formatScalaCaseClass),
     deltaTypes: deltaTypes.map(formatScalaCaseClass),
     handlers: handlers.map(formatSparkHandler),
   });

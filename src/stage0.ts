@@ -77,6 +77,56 @@ class DeltaFileStorage[T <: Product : TypeTag](private val loc: String) extends 
   }
 }
 
+class IndexerStorage[T <: Product : TypeTag](private val loc: String, private val column: String) extends Storage[T] {
+  def read(spark: SparkSession): Dataset[T] = {
+    import spark.implicits._
+
+    val ds = spark.emptyDataset[T]
+    return ds
+  }
+
+  def insert(spark: SparkSession, ds: Dataset[T]): Unit = {
+
+  }
+
+  def update(spark: SparkSession, ds: Dataset[T]): Unit = {
+
+  }
+
+  def delete(spark: SparkSession, ds: Dataset[T]): Unit = {
+
+  }
+
+  def clear(spark: SparkSession): Unit = {
+
+  }
+}
+
+class PostgresTableStorage[T <: Product : TypeTag](private val loc: String) extends Storage[T] {
+  def read(spark: SparkSession): Dataset[T] = {
+    import spark.implicits._
+
+    val ds = spark.emptyDataset[T]
+    return ds
+  }
+
+  def insert(spark: SparkSession, ds: Dataset[T]): Unit = {
+
+  }
+
+  def update(spark: SparkSession, ds: Dataset[T]): Unit = {
+
+  }
+
+  def delete(spark: SparkSession, ds: Dataset[T]): Unit = {
+
+  }
+
+  def clear(spark: SparkSession): Unit = {
+
+  }
+}
+
 // case class DatabaseStorage() extends Storage
 
 // --- Runtime:Plans ---

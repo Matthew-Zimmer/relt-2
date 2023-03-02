@@ -1,24 +1,31 @@
 
+type model MyType = {
+  x: string,
+}
+
 delta $"TABLE_1_LOC"
 model Table1 = {
   id: string,
   name: string,
+  col: MyType[] json,
 }
 
-delta $"TABLE_2_LOC"
+postgres $"TABLE_2_LOC"
 model Table2 = {
   my_id: string,
   tid: string,
-  value: int,
+  value: int?,
+  ts: date "yyyy/mm/dd",
 }
 
 model Table3 = 
   | Table2 
-  | where value > 0
+  | where value > 0 ?? true
   | sort tid asc
   | with {
     x = 5,
   }
 
-delta $"TABLE_4_OUTPUT"
+index $"TABLE_4_OUTPUT" on "my_id"
 model Table4 = Table1 join(id == tid) Table3
+
