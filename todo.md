@@ -13,8 +13,8 @@
 - [x] identifier types
 
 - [x] ?? operator
-- [ ] ??= operator
-- [ ] as operator
-- [ ] := operator
+- [x] ??= operator
+- [x] as operator
+- [x] := operator
 
 - [ ] string interpolation
