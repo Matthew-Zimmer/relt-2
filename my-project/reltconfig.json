@@ -1,0 +1,16 @@
+{
+  "name": "my-project",
+  "aws": {
+    "region": "<region>",
+    "table": "<dynamo-table-name>",
+    "bucket": "<s3-bucket-name>"
+  },
+  "databricks": {
+    "host": "https://<account>.cloud.databricks.com"
+  },
+  "webex": {
+    "roomId": "<id>",
+    "host": "https://<webex-url>"
+  },
+  "gitlab": {}
+}

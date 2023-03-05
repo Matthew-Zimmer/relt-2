@@ -1,0 +1,28 @@
+delta $"TABLE_1_LOC"
+model Table1 = {
+  id: string,
+  name: string,
+}
+
+delta $"TABLE_2_LOC"
+model Table2 = {
+  id: string,
+  tid: string,
+  value: string,
+}
+
+delta $"TABLE_3_LOC"
+model Table3 = Table2
+  | where value > 0 and tid != ""
+| sort value asc
+| over tid
+| with {
+  children: collect,
+  count: count,
+  maxValue: value.max,
+  constant: 5,
+}
+| where count > 10
+
+delta $"TABLE_4_LOC"
+model Table4 = Table1 left join Table3

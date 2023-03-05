@@ -2,6 +2,8 @@ import { spawnSync } from "child_process";
 import { mkdir, writeFile } from "fs/promises";
 import { match } from "ts-pattern";
 import { throws } from "../../errors";
+import { Project } from "../../project";
+import { adapters } from "../adapters";
 
 export interface InitArgs {
   name: string;
@@ -9,36 +11,34 @@ export interface InitArgs {
 }
 
 export async function init(args: InitArgs) {
-  const { name, adapters } = args;
+  const { name, adapters: requestedAdapters } = args;
 
-  const config = {
+  await mkdir(name);
+
+  const project = {
     name: name,
-    ...adapters.map(x => {
-      return match(x)
-        .with('aws', () => ({ aws: { region: "<region>", table: "<dynamo-table-name>", bucket: "<s3-bucket-name>" } }))
-        .with('databricks', () => ({ databricks: { host: "<account>.cloud.databricks.com" } }))
-        .with('webex', () => ({ webex: { roomId: "<id>" } }))
-        .otherwise((x) => throws(`Unknown using: ${x}`));
-    }),
-  };
+    ...requestedAdapters.reduce((p, c) => {
+      return {
+        ...p,
+        ...match(c)
+          .with('aws', () => ({ aws: { region: "<region>", table: "<dynamo-table-name>", bucket: "<s3-bucket-name>" } }))
+          .with('databricks', () => ({ databricks: { host: "https://<account>.cloud.databricks.com" } }))
+          .with('webex', () => ({ webex: { roomId: "<id>", host: "https://<webex-url>" } }))
+          .with('gitlab', () => ({ gitlab: {} }))
+          .otherwise((x) => throws(`Unknown adapter: ${x}`))
+      };
+    }, {}),
+  } satisfies Project;
 
-  await writeFile("reltconfig.json", JSON.stringify(config, undefined, 2));
+  await writeFile(`${name}/reltconfig.json`, JSON.stringify(project, undefined, 2));
 
-  await mkdir("src");
+  await mkdir(`${name}/src`);
 
-  await writeFile("src/main.relt", "");
+  await writeFile(`${name}/src/main.relt`, "");
 
-  await match(cicd)
-    .with(undefined, async () => { })
-    .with("gitlab-previews", async () => {
-      return Promise.allSettled(
-        gitlabPreviewsScripts()
-          .map(([path, cnt]) => writeFile(path, cnt))
-      );
-    })
-    .otherwise(async () => {
-      throw new Error();
-    });
+  const { runner } = adapters(project);
+
+  await runner?.createConfigs();
 
   await writeFile(".gitignore",
     `\

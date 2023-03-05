@@ -1,20 +1,13 @@
-// @ts-expect-error
-import Webex from 'webex';
+import axios from 'axios';
 import { AlertAdapter } from "..";
 import { Project } from '../../../project';
 
 export function webexAlertAdapter(project: Project): AlertAdapter {
-  const { webex: { roomId } } = project;
-
-  const webex = Webex.init({
-    credentials: {
-      access_token: process.env.WEBEX_TOKEN!,
-    }
-  });
+  const { webex: { roomId, host } } = project;
 
   return {
     msg: async (msg) => {
-      webex.messages.create({
+      await axios.post(`${host}/v1/messages`, {
         roomId,
         markdown: msg,
       });

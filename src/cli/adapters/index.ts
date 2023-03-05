@@ -24,7 +24,7 @@ export interface CloudAdapter {
 }
 
 export interface RunnerAdapter {
-
+  createConfigs: () => Promise<void>;
 }
 
 export interface Adapters {

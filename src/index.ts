@@ -27,7 +27,7 @@ async function main() {
           }
         }),
         args => { compile(args) })
-      .command('deploy', 'Runs the project', yargs => yargs
+      .command('deploy', 'Deploys the project tto an environment (uses cloud,job,[alert] adapters)', yargs => yargs
         .positional("branch", {
           type: "string",
           demandOption: true,
@@ -41,7 +41,7 @@ async function main() {
           }
         }),
         args => deploy(args))
-      .command('redeploy', 'Runs the project', yargs => yargs
+      .command('redeploy', 'Redeploys existing project to an environment (uses cloud,job,[alert] adapters)', yargs => yargs
         .positional("branch", {
           type: "string",
           demandOption: true,
@@ -55,7 +55,7 @@ async function main() {
           }
         }),
         args => redeploy(args))
-      .command('destroy', 'Runs the project', yargs => yargs
+      .command('destroy', 'Destroys the production from a environment (uses cloud,job adapters)', yargs => yargs
         .positional("branch", {
           type: "string",
           demandOption: true,
