@@ -1,0 +1,48 @@
+
+hash
+postgres $"TABLE_1_LOCATION"
+model Table1 = {
+  id: string pk,
+  firstName: string,
+  lastName: string,
+}
+
+postgres $"TABLE_2_LOCATION"
+model Table2 = {
+  xid: string pk,
+	tid: Table1 fk,
+  value: int,
+}
+
+postgres $"TABLE_3_OUTPUT"
+model Table3 = 
+  | Table1
+	| join Table2
+  | with {
+    fullName = firstName + " " + lastName,
+  }
+
+/*
+
+valid commands and plans:
+
+- refresh Table1
+	- refresh Table1
+	- fetch Table2 where tid in Table1.id
+	- store Table3
+- hashRefresh Table1
+	- hashRefresh Table1
+	- fetch Table2 where tid in Table1.id
+	- store Table3
+- refresh Table2
+	- refresh Table2 
+	- fetch Table1 where id in Table2.tid
+	- store Table3
+- refresh Table1 & refresh Table2
+	- refresh Table1
+	- refresh Table2
+	- derive RELT_0
+	- derive Table3
+	- store Table3
+
+*/

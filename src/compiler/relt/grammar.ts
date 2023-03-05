@@ -1,4 +1,7 @@
+import { readFile } from 'fs/promises';
 import { generate } from 'peggy';
+import { ReltModule } from './types';
+import { Ast } from './ast';
 
 export const parser = generate(`
   module 
@@ -270,3 +273,9 @@ export const parser = generate(`
     = name: identifier _ ":" _ type: type
     { return { name, type } }
 `);
+
+export async function parseRelt(filename: string): Promise<Ast> {
+  const cnt = (await readFile(filename)).toString();
+  const module = parser.parse(cnt) as ReltModule;
+  return new Ast(module);
+}
