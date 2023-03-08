@@ -6,7 +6,6 @@ export async function compileReltModule(fileName: string): Promise<ReltModule> {
   const ast = await parseRelt(fileName);
 
   return (ast
-    .apply(transformations.noPipes)
     .apply(transformations.reorder)
     .module
   );

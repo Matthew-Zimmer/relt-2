@@ -16,7 +16,7 @@ export async function deploy(args: DeployArgs) {
     cloud: true,
   });
 
-  const { jarPath } = compile({ toJar: true });
+  const { jarPath } = await compile({ toJar: true });
   await cloud.upload(jarPath!, "");
   const newJob = await job.create({
     jarPath: jarPath!,

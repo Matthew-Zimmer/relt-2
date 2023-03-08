@@ -29,11 +29,11 @@ export const parser = generate(`
 
   module_definition
     = "mod" __ name: identifier
-    { return { kind: "ModuleExpression", name } }
+    { return { kind: "ReltModule", name } }
 
   model_definition
     = modifiers: (@model_modifier _)* _ "model" _ name: identifier _ "=" _ expression: expression
-    { return { kind: "ModelDefinition", modifiers, name, expression } }
+    { return { kind: "ReltModelDefinition", modifiers, name, expression } }
 
   model_modifier
     = delta_model_modifier
@@ -43,19 +43,19 @@ export const parser = generate(`
 
   delta_model_modifier
     = "delta" __ value: (string_expression / env_var_expression)
-    { return { kind: "DeltaModelModifier", value } }
+    { return { kind: "ReltDeltaModelModifier", value } }
 
   postgres_model_modifier
     = "postgres" __ value: (string_expression / env_var_expression)
-    { return { kind: "PostgresModelModifier", value } }
+    { return { kind: "ReltPostgresModelModifier", value } }
 
   index_model_modifier
     = "index" __ value: (string_expression / env_var_expression) __ "on" __ on: string_expression
-    { return { kind: "IndexModelModifier", value, on } }
+    { return { kind: "ReltIndexModelModifier", value, on } }
 
   type_model_modifier
     = "type"
-    { return { kind: "TypeModelModifier" } }
+    { return { kind: "ReltTypeModelModifier" } }
 
   type
     = postfix_type
@@ -80,34 +80,34 @@ export const parser = generate(`
 
   string_type
     = "string"
-    { return { kind: "StringType" } }
+    { return { kind: "ReltStringType" } }
   
   integer_type
     = "int"
-    { return { kind: "IntegerType" } }
+    { return { kind: "ReltIntegerType" } }
   
   float_type
     = "float"
-    { return { kind: "FloatType" } }
+    { return { kind: "ReltFloatType" } }
   
   boolean_type
     = "bool"
-    { return { kind: "BooleanType" } }
+    { return { kind: "ReltBooleanType" } }
 
   identifier_type
     = name: identifier
-    { return { kind: "IdentifierType", name } }
+    { return { kind: "ReltIdentifierType", name } }
 
   date_type
     = "date" fmt: (_ @string_expression)?
-    { return { kind: "DateType", fmt: fmt === null ? undefined : fmt.value } }
+    { return { kind: "ReltDateType", fmt: fmt === null ? undefined : fmt.value } }
 
   expression
     = pipe_expression
 
   pipe_expression
     = ("|" _)? head: command_expression tail:(_ op: ("|") _ right: command_expression { return {
-      kind: "PipeExpression",
+      kind: "ReltPipeExpression",
       op,
       right,
     }})*
@@ -123,28 +123,28 @@ export const parser = generate(`
     / below_command_expression
   
   where_expression
-    = head: (@below_command_expression _)? "where" _ condition: below_command_expression
-    { return { kind: "WhereExpression", head: head ?? undefined, condition } }
+    = "where" _ condition: below_command_expression
+    { return { kind: "ReltWhereExpression", condition } }
 
   sort_expression
-    = head: (@below_command_expression _)? "sort" _ columns: (h: identifier_expression t: (_ "," _ @identifier_expression)* { return [h, ...t] }) __ op: ("asc" / "desc")
-    { return { kind: "SortExpression", head: head ?? undefined, columns, op } }
+    = "sort" _ columns: (h: identifier_expression t: (_ "," _ @identifier_expression)* { return [h, ...t] }) __ op: ("asc" / "desc")
+    { return { kind: "ReltSortExpression", columns, op } }
 
   over_expression
-    = head: (@below_command_expression _)? "over" _ column: below_command_expression
-    { return { kind: "OverExpression", head: head ?? undefined, column } }
+    = "over" _ column: below_command_expression
+    { return { kind: "ReltOverExpression", column } }
   
   join_expression
-    = head: (@below_command_expression _)? op: (@("left" / "right" / "inner") __)? "join" on: group_expression? _ other: below_command_expression
-    { return { kind: "JoinExpression", head: head ?? undefined, op: op ?? "inner", on: on ?? undefined, other } }
+    = op: (@("left" / "right" / "inner") __)? "join" on: group_expression? _ other: below_command_expression
+    { return { kind: "ReltJoinExpression", op: op ?? "inner", on: on ?? undefined, other } }
 
   union_expression
-    = head: (@below_command_expression _)? "union" _ other: below_command_expression
-    { return { kind: "UnionExpression", head: head ?? undefined, other } }
+    = "union" _ other: below_command_expression
+    { return { kind: "ReltUnionExpression", other } }
 
   with_expression
-    = head: (@below_command_expression _)? "with" _ "{" _ properties: (@object_property _ "," _)* _ "}"
-    { return { kind: "WithExpression", head: head ?? undefined, properties } }
+    = "with" _ "{" _ properties: (@object_property _ "," _)* _ "}"
+    { return { kind: "ReltWithExpression", properties } }
 
   object_property
     = assign_object_property
@@ -154,26 +154,26 @@ export const parser = generate(`
 
   assign_object_property
     = name: identifier _ "=" _ value: expression
-    { return { kind: "AssignObjectProperty", name, value } }
+    { return { kind: "ReltAssignObjectProperty", name, value } }
 
   as_object_property
     = name: identifier _ "as" _ type: type
-    { return { kind: "AsObjectProperty", name, type } }
+    { return { kind: "ReltAsObjectProperty", name, type } }
 
   op_assign_object_property
     = name: identifier _ op: ("??=") _ value: expression
-    { return { kind: "OpAssignObjectProperty", name, op, value } }
+    { return { kind: "ReltOpAssignObjectProperty", name, op, value } }
 
   rename_object_property
     = name: identifier _ ":=" _ value: expression
-    { return { kind: "RenameObjectProperty", name, value } }
+    { return { kind: "ReltRenameObjectProperty", name, value } }
 
   below_command_expression
     = coalesce_expression
 
   coalesce_expression
     = head: or_expression tail:(_ op: ("??") _ right: or_expression { return {
-      kind: 'CoalesceExpression',
+      kind: 'ReltCoalesceExpression',
       op,
       right,
     }})*
@@ -181,7 +181,7 @@ export const parser = generate(`
 
   or_expression
     = head: and_expression tail:(_ op: ("or") _ right: and_expression { return {
-      kind: 'OrExpression',
+      kind: 'ReltOrExpression',
       op,
       right,
     }})*
@@ -189,7 +189,7 @@ export const parser = generate(`
 
   and_expression
     = head: cmp_expression tail:(_ op: ("and") _ right: cmp_expression { return {
-      kind: 'AndExpression',
+      kind: 'ReltAndExpression',
       op,
       right,
     }})*
@@ -197,7 +197,7 @@ export const parser = generate(`
 
   cmp_expression
     = head: add_expression tail:(_ op: ("==" / "!=" / "<=" / ">=" / "<" / ">") _ right: add_expression { return {
-      kind: 'CmpExpression',
+      kind: 'ReltCmpExpression',
       op,
       right,
     }})*
@@ -205,7 +205,7 @@ export const parser = generate(`
 
   add_expression
     = head: mul_expression tail:(_ op: ("+" / "-") _ right: mul_expression { return {
-      kind: 'AddExpression',
+      kind: 'ReltAddExpression',
       op,
       right,
     }})*
@@ -213,7 +213,7 @@ export const parser = generate(`
 
   mul_expression
     = head: dot_expression tail:(_ op: ("*" / "/" / "%") _ right: dot_expression { return {
-      kind: 'MulExpression',
+      kind: 'ReltMulExpression',
       op,
       right,
     }})*
@@ -221,7 +221,7 @@ export const parser = generate(`
 
   dot_expression
     = head: literal_expression tail:(_ op: (".") _ right: literal_expression { return {
-      kind: 'DotExpression',
+      kind: 'ReltDotExpression',
       op,
       right,
     }})*
@@ -239,15 +239,15 @@ export const parser = generate(`
 
   string_expression
     = "\\"" chars: [^\\"]* "\\""
-    { return { kind: "StringExpression", value: chars.join('') } }
+    { return { kind: "ReltStringExpression", value: chars.join('') } }
 
   integer_expression
     = value: ("0" / head: [1-9] tail: [0-9]* { return head + tail.join("") })
-    { return { kind: "IntegerExpression", value: Number(value) } }
+    { return { kind: "ReltIntegerExpression", value: Number(value) } }
 
   float_expression
     = integer_part: ("0" / head: [1-9] tail: [0-9]* { return head + tail.join("") }) "." decimal_part: [0-9]+
-    { return { kind: "FloatExpression", value: integer_part + "." + decimal_part.join("") } }
+    { return { kind: "ReltFloatExpression", value: integer_part + "." + decimal_part.join("") } }
 
   boolean_expression
     = value: ("true" / "false")
@@ -255,19 +255,19 @@ export const parser = generate(`
 
   env_var_expression
     = "$\\"" chars: [^\\"]* "\\""
-    { return { kind: "EnvVarExpression", value: chars.join('') } }
+    { return { kind: "ReltEnvVarExpression", value: chars.join('') } }
 
   identifier_expression
     = name: identifier
-    { return { kind: "IdentifierExpression", name } }
+    { return { kind: "ReltIdentifierExpression", name } }
 
   group_expression
     = "(" _ value: expression _ ")"
-    { return { kind: "GroupExpression", value } }
+    { return { kind: "ReltGroupExpression", value } }
 
   type_object_expression
     = "{" _ properties: (@type_object_property _ "," _)* _ "}"
-    { return { kind: "TypeObjectExpression", properties } }
+    { return { kind: "ReltTypeObjectExpression", properties } }
 
   type_object_property
     = name: identifier _ ":" _ type: type

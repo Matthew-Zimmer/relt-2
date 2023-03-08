@@ -32,26 +32,22 @@ export interface ReltPipeExpression {
 
 export interface ReltWhereExpression {
   kind: "ReltWhereExpression";
-  head?: ReltExpression;
   condition: ReltExpression;
 }
 
 export interface ReltSortExpression {
   kind: "ReltSortExpression";
-  head?: ReltExpression;
   columns: ReltIdentifierExpression[];
   op: "asc" | "desc";
 }
 
 export interface ReltOverExpression {
   kind: "ReltOverExpression";
-  head?: ReltExpression;
   column: ReltExpression;
 }
 
 export interface ReltJoinExpression {
   kind: "ReltJoinExpression";
-  head?: ReltExpression;
   op: "inner" | "left" | "right";
   on?: ReltGroupExpression;
   other: ReltExpression;
@@ -59,13 +55,11 @@ export interface ReltJoinExpression {
 
 export interface ReltUnionExpression {
   kind: "ReltUnionExpression";
-  head?: ReltExpression;
   other: ReltExpression;
 }
 
 export interface ReltWithExpression {
   kind: "ReltWithExpression";
-  head?: ReltExpression;
   properties: ReltObjectProperty[];
 }
 

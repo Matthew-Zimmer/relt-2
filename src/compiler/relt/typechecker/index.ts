@@ -174,17 +174,30 @@ export class TypeChecker {
     if (this.models.has(x.name))
       return this.models.get(x.name)!;
 
+    console.log(`Type checking: ${x.name}`);
+
     const t = this.typeCheckExpr(x.expression);
 
     assertKind(t, "ReltStructType", "");
 
     this.models.set(x.name, t);
     this.ctx.clear();
+    this.workingType = undefined;
 
     return t as ReltStructType;
   }
 
   private ctx = new Map<string, ReltType>();
+  private workingType?: ReltStructType = undefined;
+  private setWorkingType(x: ReltStructType) {
+    this.workingType = { ...x };
+    this.ctx.clear();
+    x.properties.forEach(x => {
+      assertExpectation(!this.ctx.has(x.name), `${x.name} is already defined`);
+      this.ctx.set(x.name, x.type);
+    });
+  }
+
   typeCheckExpr(x: ReltExpression): ReltType {
     switch (x.kind) {
       case "ReltBooleanExpression": return types.bool;
@@ -226,50 +239,59 @@ export class TypeChecker {
         return t;
       }
 
-      case "ReltPipeExpression": assertInvariant(false, `Pipes should be removed`); throw '';
+      case "ReltPipeExpression": {
+        const l = this.typeCheckExpr(x.left);
+        assertKind(l, 'ReltStructType', `Left side of pipe needs to be a struct type`);
+
+        this.setWorkingType(l);
+
+        const r = this.typeCheckExpr(x.right);
+        assertKind(r, 'ReltStructType', `Right side of pipe needs to be a struct type`);
+
+        // is this needed?
+        this.setWorkingType(r);
+
+        return r;
+      }
 
       case "ReltJoinExpression": {
-        assertInvariant(x.head !== undefined, `Heads should be set from pipe rewrites`);
-        const l = this.typeCheckExpr(x.head!);
-        assertKind(l, 'ReltStructType', `Left side of join needs to be a struct type`);
+        assertDefined(this.workingType, `Did you forget to pipe in the left model?`);
+
         const r = this.typeCheckExpr(x.other);
         assertKind(r, 'ReltStructType', `Right side of join needs to be a struct type`);
-        return mergeStructs(l, r);
+
+        return mergeStructs(this.workingType, r);
       }
       case "ReltSortExpression": {
-        assertInvariant(x.head !== undefined, `Heads should be set from pipe rewrites`);
-        const l = this.typeCheckExpr(x.head!);
-        assertKind(l, 'ReltStructType', `Left side of join needs to be a struct type`);
+        assertDefined(this.workingType, `Did you forget to pipe in the left model?`);
+
         const oldCtx = new Map(this.ctx);
-        this.ctx = new Map(l.properties.map(x => [x.name, x.type]));
+        this.ctx = new Map(this.workingType.properties.map(x => [x.name, x.type]));
         x.columns.forEach(x => this.typeCheckExpr(x));
         this.ctx = oldCtx;
-        return l;
+        return this.workingType;
       }
       case "ReltWhereExpression": {
-        assertInvariant(x.head !== undefined, `Heads should be set from pipe rewrites`);
-        const l = this.typeCheckExpr(x.head!);
-        assertKind(l, 'ReltStructType', `Left side of join needs to be a struct type`);
+        assertDefined(this.workingType, `Did you forget to pipe in the left model?`);
+
         const oldCtx = new Map(this.ctx);
-        this.ctx = new Map((l as ReltStructType).properties.map(x => [x.name, x.type]));
+        this.ctx = new Map(this.workingType.properties.map(x => [x.name, x.type]));
         const c = this.typeCheckExpr(x.condition);
         assertExpectation(typeEquals(c, types.bool), `Where condition needs to be a bool got ${formatRelt(c)}`);
         this.ctx = oldCtx;
-        return l;
+        return this.workingType;
       }
       case "ReltUnionExpression": {
-        assertInvariant(x.head !== undefined, `Heads should be set from pipe rewrites`);
-        const l = this.typeCheckExpr(x.head!);
-        assertKind(l, 'ReltStructType', `Left side of join needs to be a struct type`);
+        assertDefined(this.workingType, `Did you forget to pipe in the left model?`);
+
         const r = this.typeCheckExpr(x.other);
-        assertKind(r, 'ReltStructType', `Right side of join needs to be a struct type`);
-        assertExpectation(typeEquals(l, r), `Cannot union non equal struct types`);
-        return l;
+        assertKind(r, 'ReltStructType', `Right side of union needs to be a struct type`);
+        assertExpectation(typeEquals(this.workingType, r), `Cannot union non equal struct types`);
+        return this.workingType;
       }
-      case "ReltWithExpression":
-        assertInvariant(x.head !== undefined, `Heads should be set from pipe rewrites`);
-        const l = this.typeCheckExpr(x.head!);
-        assertKind(l, 'ReltStructType', `Left side of join needs to be a struct type`);
+      case "ReltWithExpression": {
+        assertDefined(this.workingType, `Did you forget to pipe in the left model?`);
+
         const properties = x.properties.map(x => {
           switch (x.kind) {
             case "ReltAsObjectProperty":
@@ -280,7 +302,8 @@ export class TypeChecker {
               return { name: x.name, type: this.typeCheckExpr(x.value) };
           }
         });
-        return mergeStructs(l as ReltStructType, { kind: "ReltStructType", properties }, { allowOverride: true });
+        return mergeStructs(this.workingType, { kind: "ReltStructType", properties }, { allowOverride: true });
+      }
       case "ReltOverExpression":
         throw `TODO`;
     }

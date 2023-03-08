@@ -33,18 +33,18 @@ class Dag[T](
   def instructionFor(v: Vertex): Seq[Instruction[T]] = {
     if (v.isSource) {
       return Seq(
-        this.instructionSet["fetch"][v.name],
+        this.instructionSet[v.name]["fetch"],
       )
     }
     else if (v.hasStorage) {
       return Seq(
-        this.instructionSet["derive"][v.name],
-        this.instructionSet["store"][v.name],
+        this.instructionSet[v.name]["derive"],
+        this.instructionSet[v.name]["store"],
       )
     }
     else {
       return Seq(
-        this.instructionSet["derive"][v.name],
+        this.instructionSet[v.name]["derive"],
       )
     }
   }
@@ -92,11 +92,11 @@ class Interpreter[T](
       return node match {
         case RefreshNode(table) => {
           seenTables +:= table
-          instructions +:= this.instructionSet["refresh"][table]
+          instructions +:= this.instructionSet[table]["refresh"]
         }
         case HashRefreshNode(table) => {
           seenTables +:= table
-          instructions +:= this.instructionSet["hash refresh"][table]
+          instructions +:= this.instructionSet[table]["hash refresh"]
         }
         case AllNode(nodes) => {
           instructions ++:= nodes.flatMap(helper)
@@ -135,7 +135,7 @@ object Udfs {
 }
 
 object Ops {
-  def join[L, R, T <: Product : TypeTag](spark: SparkSession, lds: DataSet[L], rds: DataSet[R], on: Column, kind: String, drop: String): DataSet[T] = {
+  def join(spark: SparkSession, lds: DataFrame, rds: DataFrame, on: Column, kind: String): DataFrame = {
     import spark.implicits._
 
     val ldc = s"l${DeltaState.column}"
@@ -151,9 +151,7 @@ object Ops {
       case _ => throw new Exception(s"bad kind: ${kind} in join op")
     }
 
-    return ds
-      .drop(drop, ldc, rdc)
-      .as[T]
+    return ds.drop(ldc, rdc)
   }
 }
 
@@ -299,7 +297,7 @@ object Instructions {
     def execute(spark: SparkSession, dss: Datasets): Datasets = {
       import spark.implicits._
 
-      val ds = Ops.join[DeltaTypes.Table1, DeltaTypes.Table2, DeltaTypes.RELT_0](dss._1, dss._2, col("id") === col("tid"), "inner", "tid")
+      val ds = Ops.join(dss._1, dss._2, col("id") === col("tid"), "inner").drop("").as[T]
 
       return (dss._1, dss._2, ds, dss._4)
     }

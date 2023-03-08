@@ -19,5 +19,5 @@ export function makeProject(project: Project, models: ReltModelDefinition[]): Sc
 }
 
 export function toScala(project: Project, models: ReltModelDefinition[]): string {
-  return makeProject(project, models).map(formatScala).join('\n');
+  return makeProject(project, models).map(formatScala).join('\n\n');
 }

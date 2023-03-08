@@ -7,6 +7,7 @@ export type ScalaType =
   | ScalaDotType
   | ScalaOfType
   | ScalaDateType
+  | ScalaTupleType
 
 export interface ScalaDoubleType {
   kind: "ScalaDoubleType"
@@ -39,6 +40,11 @@ export interface ScalaOfType {
   kind: "ScalaOfType",
   type: ScalaType,
   of: ScalaType[]
+}
+
+export interface ScalaTupleType {
+  kind: "ScalaTupleType",
+  types: ScalaType[],
 }
 
 export interface ScalaDateType {

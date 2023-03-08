@@ -1,11 +1,9 @@
-import { ReltModelDefinition } from "../../../relt/types";
+import { DeriveInstruction } from "../../../relt/analysis/validInstructions";
 import { ScalaObjectDefinition } from "../../types";
+import { makeInstructionClass } from "./common";
 
-export function makeDeriveInstructionFor(model: ReltModelDefinition): ScalaObjectDefinition {
-  return {
-    kind: "ScalaObjectDefinition",
-    name: `Derive${model.name}Instruction`,
-    extends: "Instruction",
-    properties: [],
-  };
+export function convertDeriveInstruction(ins: DeriveInstruction, count: number, idx: number): ScalaObjectDefinition {
+  return makeInstructionClass(ins.className, count, idx, [
+    // TODO
+  ]);
 }

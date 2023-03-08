@@ -15,7 +15,7 @@ export async function redeploy(args: RedeployArgs) {
     cloud: true,
   });
 
-  const { jarPath } = compile({ toJar: true });
+  const { jarPath } = await compile({ toJar: true });
   await cloud.upload(jarPath!, "");
   const state = await cloud.load(branch);
   await job.run({

@@ -10,20 +10,26 @@ export type ScalaExpression =
   | ScalaDefExpression
   | ScalaGroupExpression
   | ScalaNewExpression
-
-
-
+  | ScalaStringExpression
+  | ScalaBooleanExpression
+  | ScalaIntegerExpression
+  | ScalaFloatExpression
+  | ScalaImportExpression
+  | ScalaReturnExpression
+  | ScalaTupleExpression
 
 export interface ScalaVarExpression {
   kind: "ScalaVarExpression";
   name: string;
   value: ScalaExpression;
+  visibility?: "private";
 }
 
 export interface ScalaValExpression {
   kind: "ScalaValExpression";
   name: string;
   value: ScalaExpression;
+  visibility?: "private";
 }
 
 export interface ScalaBinaryOpExpression {
@@ -37,12 +43,18 @@ export interface ScalaAppExpression {
   kind: "ScalaAppExpression";
   func: ScalaExpression;
   args: ScalaExpression[];
+  hints?: {
+    indent?: boolean;
+  };
 }
 
 export interface ScalaDotExpression {
   kind: "ScalaDotExpression";
   left: ScalaExpression;
   right: ScalaExpression;
+  hints?: {
+    indent?: boolean;
+  };
 }
 
 export interface ScalaIdentifierExpression {
@@ -67,6 +79,41 @@ export interface ScalaGroupExpression {
 export interface ScalaNewExpression {
   kind: "ScalaNewExpression";
   value: ScalaExpression;
+}
+
+export interface ScalaStringExpression {
+  kind: "ScalaStringExpression";
+  value: string;
+}
+
+export interface ScalaBooleanExpression {
+  kind: "ScalaBooleanExpression";
+  value: boolean;
+}
+
+export interface ScalaIntegerExpression {
+  kind: "ScalaIntegerExpression";
+  value: number;
+}
+
+export interface ScalaFloatExpression {
+  kind: "ScalaFloatExpression";
+  value: string;
+}
+
+export interface ScalaImportExpression {
+  kind: "ScalaImportExpression";
+  value: ScalaExpression;
+}
+
+export interface ScalaReturnExpression {
+  kind: "ScalaReturnExpression";
+  value: ScalaExpression;
+}
+
+export interface ScalaTupleExpression {
+  kind: "ScalaTupleExpression";
+  values: ScalaExpression[];
 }
 
 export function thisExpression(right: ScalaExpression): ScalaExpression {

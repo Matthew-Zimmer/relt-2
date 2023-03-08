@@ -1,5 +1,4 @@
 import { ReltModule } from "../types";
-import { noPipes } from "./noPipes";
 import { reorder } from "./reorder";
 
 export interface Transformation {
@@ -8,6 +7,5 @@ export interface Transformation {
 }
 
 export const transformations = {
-  noPipes,
   reorder,
 };
