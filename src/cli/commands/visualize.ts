@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { match, P } from "ts-pattern";
 import { compile } from "../../compiler";
+import { deps } from "../../compiler/relt/analysis/vertex";
 import { tc } from "../../compiler/relt/typechecker";
 import { ReltModelDefinition, ReltType } from "../../compiler/relt/types";
 import { throws } from "../../errors";
@@ -52,7 +53,7 @@ ${d2Connections(models)}
 }
 
 function d2Connections(models: ReltModelDefinition[]): string {
-  return ``;
+  return models.flatMap(x => deps.feedsInto(x.name).map(y => `${x.name} -> ${y}`)).join('\n');
 }
 
 function d2sqlBlock(model: ReltModelDefinition): string {
