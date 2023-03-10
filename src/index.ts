@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import yargs from 'yargs';
 import { init, destroy, redeploy, deploy, compile } from './cli/commands';
+import { visualize } from './cli/commands/visualize';
 
 async function main() {
   try {
@@ -69,6 +70,18 @@ async function main() {
           }
         }),
         args => destroy(args))
+      .command('visualize', 'Generates a diagram of data flow through the job', yargs => yargs
+        .options({
+          "open": {
+            boolean: true,
+            default: false,
+          },
+          "emit": {
+            boolean: true,
+            default: true,
+          }
+        }),
+        args => visualize(args))
       .help()
       .version("0.0.0")
       .argv
