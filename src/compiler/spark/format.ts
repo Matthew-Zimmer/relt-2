@@ -52,7 +52,7 @@ export function formatScala(x: ScalaExpression | ScalaDefinition | ScalaType): s
       .with({ kind: "ScalaTupleExpression" }, x => match(x.values)
         .with([], () => throws(`In scala empty tuples are invalid`))
         .with([P.select()], x => `tuple1(${helper(x)})`)
-        .otherwise(x => `(${x.map(helper).join(', ')})`)
+        .otherwise(v => `(${x.hints?.indent ? "\n" + block(v, ",") + indentation : v.map(helper).join(', ')})`)
       )
       .with({ kind: "ScalaPartExpression" }, x => `(${helper(x.value)})`)
       .exhaustive();

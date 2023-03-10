@@ -51,7 +51,7 @@ export function makePostgresStorageRead(model: ReltModelDefinition): ScalaDefExp
           left: {
             kind: "ScalaDotExpression",
             hints: {
-              indent: true,
+              indent: true
             },
             left: {
               kind: "ScalaDotExpression",
@@ -79,23 +79,43 @@ export function makePostgresStorageRead(model: ReltModelDefinition): ScalaDefExp
                         indent: true,
                       },
                       left: {
-                        kind: "ScalaIdentifierExpression",
-                        name: "spark"
+                        kind: "ScalaDotExpression",
+                        hints: {
+                          indent: true,
+                        },
+                        left: {
+                          kind: "ScalaIdentifierExpression",
+                          name: "spark"
+                        },
+                        right: {
+                          kind: "ScalaIdentifierExpression",
+                          name: "read"
+                        },
                       },
                       right: {
-                        kind: "ScalaIdentifierExpression",
-                        name: "read"
+                        kind: "ScalaAppExpression",
+                        func: {
+                          kind: "ScalaIdentifierExpression",
+                          name: "format"
+                        },
+                        args: [{
+                          kind: "ScalaStringExpression",
+                          value: "jdbc"
+                        }]
                       },
                     },
                     right: {
                       kind: "ScalaAppExpression",
                       func: {
                         kind: "ScalaIdentifierExpression",
-                        name: "format"
+                        name: "option"
                       },
                       args: [{
                         kind: "ScalaStringExpression",
-                        value: "jdbc"
+                        value: "url"
+                      }, {
+                        kind: "ScalaStringExpression",
+                        value: "jdbc:postgresql://localhost:5432/postgres"
                       }]
                     },
                   },
@@ -107,10 +127,10 @@ export function makePostgresStorageRead(model: ReltModelDefinition): ScalaDefExp
                     },
                     args: [{
                       kind: "ScalaStringExpression",
-                      value: "url"
+                      value: "dbtable"
                     }, {
                       kind: "ScalaStringExpression",
-                      value: "jdbc:postgresql:dbserver"
+                      value: `\\"${model.name}\\"`
                     }]
                   },
                 },
@@ -122,10 +142,10 @@ export function makePostgresStorageRead(model: ReltModelDefinition): ScalaDefExp
                   },
                   args: [{
                     kind: "ScalaStringExpression",
-                    value: "dbtable"
+                    value: "user"
                   }, {
                     kind: "ScalaStringExpression",
-                    value: "schema.tablename"
+                    value: "root"
                   }]
                 },
               },
@@ -137,10 +157,10 @@ export function makePostgresStorageRead(model: ReltModelDefinition): ScalaDefExp
                 },
                 args: [{
                   kind: "ScalaStringExpression",
-                  value: "user"
+                  value: "password"
                 }, {
                   kind: "ScalaStringExpression",
-                  value: "username"
+                  value: "password"
                 }]
               },
             },
@@ -152,12 +172,12 @@ export function makePostgresStorageRead(model: ReltModelDefinition): ScalaDefExp
               },
               args: [{
                 kind: "ScalaStringExpression",
-                value: "password"
+                value: "driver"
               }, {
                 kind: "ScalaStringExpression",
-                value: "password"
+                value: "org.postgresql.Driver"
               }]
-            },
+            }
           },
           right: {
             kind: "ScalaAppExpression",
@@ -202,7 +222,7 @@ export function makePostgresStorageWrite(model: ReltModelDefinition): ScalaDefEx
       left: {
         kind: "ScalaDotExpression",
         hints: {
-          indent: true,
+          indent: true
         },
         left: {
           kind: "ScalaDotExpression",
@@ -225,23 +245,63 @@ export function makePostgresStorageWrite(model: ReltModelDefinition): ScalaDefEx
                   indent: true,
                 },
                 left: {
-                  kind: "ScalaIdentifierExpression",
-                  name: "ds"
+                  kind: "ScalaDotExpression",
+                  hints: {
+                    indent: true,
+                  },
+                  left: {
+                    kind: "ScalaDotExpression",
+                    hints: {
+                      indent: true,
+                    },
+                    left: {
+                      kind: "ScalaIdentifierExpression",
+                      name: "ds"
+                    },
+                    right: {
+                      kind: "ScalaIdentifierExpression",
+                      name: "write"
+                    },
+                  },
+                  right: {
+                    kind: "ScalaAppExpression",
+                    func: {
+                      kind: "ScalaIdentifierExpression",
+                      name: "format"
+                    },
+                    args: [{
+                      kind: "ScalaStringExpression",
+                      value: "jdbc"
+                    }]
+                  },
                 },
                 right: {
-                  kind: "ScalaIdentifierExpression",
-                  name: "write"
+                  kind: "ScalaAppExpression",
+                  func: {
+                    kind: "ScalaIdentifierExpression",
+                    name: "option"
+                  },
+                  args: [{
+                    kind: "ScalaStringExpression",
+                    value: "url"
+                  }, {
+                    kind: "ScalaStringExpression",
+                    value: "jdbc:postgresql://localhost:5432/postgres"
+                  }]
                 },
               },
               right: {
                 kind: "ScalaAppExpression",
                 func: {
                   kind: "ScalaIdentifierExpression",
-                  name: "format"
+                  name: "option"
                 },
                 args: [{
                   kind: "ScalaStringExpression",
-                  value: "jdbc"
+                  value: "dbtable"
+                }, {
+                  kind: "ScalaStringExpression",
+                  value: `\\"${model.name}\\"`
                 }]
               },
             },
@@ -253,10 +313,10 @@ export function makePostgresStorageWrite(model: ReltModelDefinition): ScalaDefEx
               },
               args: [{
                 kind: "ScalaStringExpression",
-                value: "url"
+                value: "user"
               }, {
                 kind: "ScalaStringExpression",
-                value: "jdbc:postgresql:dbserver"
+                value: "root"
               }]
             },
           },
@@ -268,10 +328,10 @@ export function makePostgresStorageWrite(model: ReltModelDefinition): ScalaDefEx
             },
             args: [{
               kind: "ScalaStringExpression",
-              value: "dbtable"
+              value: "password"
             }, {
               kind: "ScalaStringExpression",
-              value: "schema.tablename"
+              value: "password"
             }]
           },
         },
@@ -283,27 +343,31 @@ export function makePostgresStorageWrite(model: ReltModelDefinition): ScalaDefEx
           },
           args: [{
             kind: "ScalaStringExpression",
-            value: "user"
+            value: "driver"
           }, {
             kind: "ScalaStringExpression",
-            value: "username"
+            value: "org.postgresql.Driver"
           }]
-        },
+        }
       },
       right: {
         kind: "ScalaAppExpression",
         func: {
           kind: "ScalaIdentifierExpression",
-          name: "option"
+          name: "mode"
         },
         args: [{
-          kind: "ScalaStringExpression",
-          value: "password"
-        }, {
-          kind: "ScalaStringExpression",
-          value: "password"
+          kind: "ScalaDotExpression",
+          left: {
+            kind: "ScalaIdentifierExpression",
+            name: "SaveMode"
+          },
+          right: {
+            kind: "ScalaIdentifierExpression",
+            name: "Overwrite"
+          }
         }]
-      },
+      }
     },
     right: {
       kind: "ScalaAppExpression",

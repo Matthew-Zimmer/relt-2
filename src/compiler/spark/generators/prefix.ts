@@ -3,7 +3,7 @@ export function makeSparkPrefix() {
   return `\
 package myProject
 
-import org.apache.spark.sql.{ Encoders, Dataset, Row, SparkSession, Column, DataFrame }
+import org.apache.spark.sql.{ Encoders, Dataset, Row, SparkSession, Column, DataFrame, SaveMode }
 import org.apache.spark.sql.functions.{ collect_list, struct, sum, lit, udf, col }
 import java.sql.Date
 

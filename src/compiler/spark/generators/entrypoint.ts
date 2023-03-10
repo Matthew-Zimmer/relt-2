@@ -2,7 +2,7 @@ import { Project } from "../../../project";
 import { instructionsFor } from "../../relt/analysis/validInstructions";
 import { vertexInfo } from "../../relt/analysis/vertex";
 import { ReltModelDefinition } from "../../relt/types";
-import { ScalaValExpression, thisExpression, ScalaObjectDefinition, ScalaBinaryOpExpression, ScalaExpression } from "../types";
+import { ScalaValExpression, thisExpression, ScalaObjectDefinition, ScalaBinaryOpExpression, ScalaExpression, ScalaVarExpression } from "../types";
 
 export function makeInstructionSet(models: ReltModelDefinition[]): ScalaValExpression {
   const indices = Object.fromEntries(models.map((x, i) => [x.name, i]));
@@ -213,6 +213,41 @@ export function makeInterpreter(): ScalaValExpression {
   };
 }
 
+export function makeInitialDss(models: ReltModelDefinition[]): ScalaVarExpression {
+  return {
+    kind: "ScalaVarExpression",
+    name: "dss",
+    value: {
+      kind: "ScalaTupleExpression",
+      hints: {
+        indent: true,
+      },
+      values: models.map<ScalaExpression>(x => ({
+        kind: "ScalaDotExpression",
+        left: {
+          kind: "ScalaIdentifierExpression",
+          name: "spark"
+        },
+        right: {
+          kind: "ScalaIdentifierExpression",
+          name: "emptyDataset",
+          types: [{
+            kind: "ScalaDotType",
+            left: {
+              kind: "ScalaIdentifierType",
+              name: "DeltaTypes"
+            },
+            right: {
+              kind: "ScalaIdentifierType",
+              name: x.name
+            }
+          }]
+        }
+      })),
+    }
+  }
+}
+
 export function makeProjectEntrypoint(project: Project, models: ReltModelDefinition[]): ScalaObjectDefinition {
   return {
     kind: "ScalaObjectDefinition",
@@ -230,7 +265,11 @@ export function makeProjectEntrypoint(project: Project, models: ReltModelDefinit
         body: {
           kind: "ScalaGroupExpression",
           expressions: [
-
+            { kind: "ScalaIdentifierExpression", name: `val spark = SparkSession.builder().appName("${project.name}").master("local").getOrCreate()` },
+            { kind: "ScalaIdentifierExpression", name: `spark.sparkContext.setLogLevel("WARN")` },
+            { kind: "ScalaIdentifierExpression", name: `import spark.implicits._` },
+            makeInitialDss(models),
+            { kind: "ScalaIdentifierExpression", name: `if (args.size == 1) this.interpreter.run(args(0), spark, dss)` },
           ]
         }
       }

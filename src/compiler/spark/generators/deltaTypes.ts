@@ -30,7 +30,7 @@ export function makeDeltaTypes(models: ReltModelDefinition[]): ScalaObjectDefini
   };
 }
 
-export const deltaColumnName = "__delta_state";
+export const deltaColumnName = "__delta_state_kind";
 
 export function makeDeltaType(model: ReltModelDefinition): ScalaCaseClassDefinition {
   const baseTable = makeType(model);

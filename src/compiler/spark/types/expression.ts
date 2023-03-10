@@ -115,6 +115,9 @@ export interface ScalaReturnExpression {
 export interface ScalaTupleExpression {
   kind: "ScalaTupleExpression";
   values: ScalaExpression[];
+  hints?: {
+    indent?: boolean;
+  };
 }
 
 export interface ScalaPartExpression {

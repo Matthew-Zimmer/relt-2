@@ -28,14 +28,15 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % "3.0.1",
   "org.apache.spark" %% "spark-sql" % "3.0.1",
   "org.apache.spark" %% "spark-mllib" % "3.0.1",
+  "org.postgresql" % "postgresql" % "42.5.4",
 )
 
-assemblyMergeStrategy in assembly := {   
+assembly / assemblyMergeStrategy := {   
   case PathList("META-INF", xs @ _*) => MergeStrategy.discard   
   case x => MergeStrategy.first 
 }
 
-assemblyJarName in assembly := "${project.name}.jar"
+assembly / assemblyJarName := "${project.name}.jar"
 `;
 }
 
