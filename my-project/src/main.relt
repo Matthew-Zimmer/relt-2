@@ -13,10 +13,19 @@ model Table2 = {
   value: int,
 }
 
-postgres $"TABLE_3_OUTPUT"
-model Table3 = 
-  | Table1
-	| join(id == tid) Table2
+external "ops.Table3Ops" using Table1, Table2
+model Table3 = {
+  id: string,
+  firstName: string,
+  lastName: string,
+  xid: string,
+	tid: string,
+  value: int,
+}
+
+postgres $"TABLE_4_OUTPUT"
+model Table4 = 
+  | Table3
   | with {
     fullName = firstName + " " + lastName,
   }

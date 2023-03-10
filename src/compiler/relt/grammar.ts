@@ -20,7 +20,8 @@ export const parser = generate(`
       "model", "fk", "pk", "sort", 
       "distinct", "where", "with", "on",
       "union", "bool", "int", "string", "float",
-      "false", "true", "join", "over", "or", "and", "date"
+      "false", "true", "join", "over", "or", "and", "date",
+      "external"
       ].includes(chars[0] + chars[1].join('')) }
     { return chars[0] + chars[1].join('') }
 
@@ -40,6 +41,7 @@ export const parser = generate(`
     / postgres_model_modifier
     / index_model_modifier
     / type_model_modifier
+    / external_model_modifier
 
   delta_model_modifier
     = "delta" __ value: (string_expression / env_var_expression)
@@ -56,6 +58,10 @@ export const parser = generate(`
   type_model_modifier
     = "type"
     { return { kind: "ReltTypeModelModifier" } }
+
+  external_model_modifier
+    = "external" __ value: (string_expression / env_var_expression) __ "using" __ using: (h: identifier_expression t: ("," _ @identifier_expression)* (_ ",")? { return [h, ...t] })
+    { return { kind: "ReltExternalModelModifier", value,  using } }
 
   type
     = postfix_type

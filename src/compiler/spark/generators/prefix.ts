@@ -1,12 +1,17 @@
+import { Project } from "../../../project";
 
-export function makeSparkPrefix() {
+export function makeSparkHeader(project: Project) {
   return `\
-package myProject
+package ${project.name}
 
 import org.apache.spark.sql.{ Encoders, Dataset, Row, SparkSession, Column, DataFrame, SaveMode }
 import org.apache.spark.sql.functions.{ collect_list, struct, sum, lit, udf, col }
 import java.sql.Date
+`;
+}
 
+export function makeSparkPrefix(project: Project) {
+  return `\
 trait Instruction {
   def execute(spark: SparkSession, dss: DeltaTypes.Datasets): DeltaTypes.Datasets
 }

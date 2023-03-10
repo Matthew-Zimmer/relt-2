@@ -1,4 +1,6 @@
-# Things That Need To Work
+# Relt
+
+## Features
 
 - [x] type model modifier
   - Should not be emitted as spark code just types
@@ -18,3 +20,13 @@
 - [x] := operator
 
 - [ ] string interpolation
+
+- [ ] external model modifier
+- [ ] show model modifier
+- [ ] runtime model modifier overrides
+- [ ] runtime early stopping
+
+## Bugs
+
+- [ ] string + string => concat(string, string)
+- [ ] json types

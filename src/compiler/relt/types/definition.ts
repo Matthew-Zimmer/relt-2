@@ -1,4 +1,4 @@
-import { ReltExpression, ReltStringExpression, ReltEnvVarExpression } from "./expression";
+import { ReltExpression, ReltStringExpression, ReltEnvVarExpression, ReltIdentifierExpression } from "./expression";
 
 export type ReltDefinition =
   | ReltModelDefinition
@@ -15,6 +15,7 @@ export type ReltModelModifier =
   | ReltPostgresModelModifier
   | ReltIndexModelModifier
   | ReltTypeModelModifier
+  | ReltExternalModelModifier
 
 export interface ReltDeltaModelModifier {
   kind: "ReltDeltaModelModifier";
@@ -34,4 +35,10 @@ export interface ReltIndexModelModifier {
 
 export interface ReltTypeModelModifier {
   kind: "ReltTypeModelModifier";
+}
+
+export interface ReltExternalModelModifier {
+  kind: "ReltExternalModelModifier";
+  value: ReltStringExpression | ReltEnvVarExpression;
+  using: ReltIdentifierExpression[];
 }

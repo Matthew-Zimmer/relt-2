@@ -1,7 +1,6 @@
 import { match } from "ts-pattern";
 import { assertDefined, throws } from "../../../errors";
-import { tc } from "../typechecker";
-import { ReltBooleanExpression, ReltExpression, ReltFloatExpression, ReltIntegerExpression, ReltModelDefinition, ReltStringExpression, ReltType } from "../types";
+import { ReltBooleanExpression, ReltEnvVarExpression, ReltExpression, ReltExternalModelModifier, ReltFloatExpression, ReltIntegerExpression, ReltModelDefinition, ReltStringExpression, ReltType } from "../types";
 
 export type Instruction =
   | RefreshInstruction
@@ -50,6 +49,7 @@ export type DeriveStep =
   | SortStep
   | UnionStep
   | RenameStep
+  | CallStep
 
 export interface UseStep {
   kind: "UseStep";
@@ -116,6 +116,13 @@ export interface RetStep {
   ds: number;
 }
 
+export interface CallStep {
+  kind: "CallStep";
+  dest: number;
+  name: string;
+  args: (string | number)[];
+}
+
 export type ColumnExpression =
   | ColumnBinaryOpExpression
   | ColumnLiteralExpression
@@ -171,26 +178,37 @@ export function instructionsFor(model: ReltModelDefinition, indices: Record<stri
 
   const isSource = isSourceModel(model);
   const isStored = isStoredModel(model);
+  const isExternal = isExternalModel(model);
 
   const hasRefreshInstruction = isSource;
   const hasFetchInstruction = isStored;
-  const hasDeriveInstruction = !isSource;
+  const hasDeriveInstruction = !isExternal && !isSource;
   const hasStoreInstruction = isStored && !isSource;
+  const hasExternalDeriveInstruction = isExternal && !isSource;
 
   return [
     hasRefreshInstruction ? makeRefreshInstruction(model) : [],
     hasFetchInstruction ? makeFetchInstruction(model) : [],
     hasDeriveInstruction ? makeDeriveInstruction(model, indices) : [],
     hasStoreInstruction ? makeStoreInstruction(model) : [],
+    hasExternalDeriveInstruction ? makeExternalDeriveInstruction(model, indices) : [],
   ].flat();
 }
 
 export function isSourceModel(model: ReltModelDefinition): boolean {
-  return model.expression.kind === "ReltTypeObjectExpression";
+  const externalMod = model.modifiers.find(x => x.kind === "ReltExternalModelModifier") as ReltExternalModelModifier;
+  const isOfTypeObj = model.expression.kind === "ReltTypeObjectExpression";
+  if (externalMod === undefined)
+    return isOfTypeObj;
+  return externalMod.using.length === 0;
 }
 
 export function isTypeModel(model: ReltModelDefinition): boolean {
   return model.modifiers.some(x => x.kind === "ReltTypeModelModifier");
+}
+
+export function isExternalModel(model: ReltModelDefinition): boolean {
+  return model.modifiers.some(x => x.kind === "ReltExternalModelModifier");
 }
 
 export function isStoredModel(model: ReltModelDefinition): boolean {
@@ -199,6 +217,7 @@ export function isStoredModel(model: ReltModelDefinition): boolean {
     .with("ReltIndexModelModifier", () => false)
     .with("ReltPostgresModelModifier", () => true)
     .with("ReltTypeModelModifier", () => false)
+    .with("ReltExternalModelModifier", () => false)
     .exhaustive()
   );
 }
@@ -585,5 +604,63 @@ export function makeStoreInstruction(model: ReltModelDefinition): StoreInstructi
     name: "store",
     className: `Store${model.name}Instruction`,
     storageClassName: `${model.name}Storage`,
+  };
+}
+
+export function getValue(x: ReltStringExpression | ReltEnvVarExpression): string {
+  return match(x)
+    .with({ kind: "ReltStringExpression" }, x => x.value)
+    .with({ kind: "ReltEnvVarExpression" }, x => {
+      const value = process.env[x.value];
+      if (value === undefined)
+        throws(`Env ${x.value} is not set`)
+      return value;
+    })
+    .exhaustive();
+}
+
+function last<T>(x: T[]): T {
+  return x.length > 0 ? x[x.length - 1] : throws(`Cannot get the last element of an empty list`);
+}
+
+export function makeExternalDeriveInstruction(model: ReltModelDefinition, indices: Record<string, number>): DeriveInstruction {
+  const mod = model.modifiers.find(x => x.kind === "ReltExternalModelModifier")! as ReltExternalModelModifier;
+  let c = 0;
+
+  const externalClassValue = getValue(mod.value).trim();
+  const externalClassName = last(externalClassValue.split('.'));
+
+  return {
+    kind: "DeriveInstruction",
+    name: "derive",
+    className: `Derive${model.name}Instruction`,
+    steps: [
+      ...mod.using.map<DeriveStep>(x => ({
+        kind: "UseStep",
+        dest: c++,
+        dssIdx: indices[x.name],
+      })),
+      {
+        kind: "CallStep",
+        dest: c++,
+        name: `${externalClassName}.execute`,
+        args: [
+          "spark",
+          ...mod.using.map((_, i) => i)
+        ],
+      },
+      {
+        kind: "AsStep",
+        ds: c - 1,
+        dest: c++,
+        type: {
+          kind: "ReltIdentifierType",
+          name: model.name,
+        },
+      }, {
+        kind: "RetStep",
+        ds: c - 1,
+      }
+    ],
   };
 }

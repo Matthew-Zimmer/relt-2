@@ -21,6 +21,7 @@ export function formatRelt(x: ReltModule | ReltDefinition | ReltExpression | Rel
       .with({ kind: "ReltPostgresModelModifier" }, x => `posgtres ${helper(x.value)}`)
       .with({ kind: "ReltIndexModelModifier" }, x => `index ${helper(x.value)} on ${helper(x.on)}`)
       .with({ kind: "ReltTypeModelModifier" }, x => `type`)
+      .with({ kind: "ReltExternalModelModifier" }, x => `external ${helper(x.value)}${x.using.length === 0 ? "" : ` using ${x.using.map(helper).join(', ')}`}`)
       .with({ kind: "ReltPipeExpression" }, x => `${helper(x.left)}\n|${helper(x.right)}`)
       .with({ kind: "ReltWhereExpression" }, x => `where ${helper(x.condition)}`)
       .with({ kind: "ReltSortExpression" }, x => `sort ${x.columns.map(helper).join(', ')} ${x.op}`)

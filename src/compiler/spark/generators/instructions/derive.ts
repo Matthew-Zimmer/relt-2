@@ -303,5 +303,24 @@ export function convertDeriveStep(step: DeriveStep): ScalaExpression {
         }
       }
     }) satisfies ScalaExpression)
+    .with({ kind: "CallStep" }, x => ({
+      kind: "ScalaValExpression",
+      name: `ds${x.dest}`,
+      value: {
+        kind: "ScalaAppExpression",
+        func: {
+          kind: "ScalaIdentifierExpression",
+          name: x.name
+        },
+        args: x.args.map(x => {
+          if (typeof x === "number")
+            return df(ds(x));
+          return {
+            kind: "ScalaIdentifierExpression",
+            name: x,
+          };
+        }),
+      }
+    }) satisfies ScalaExpression)
     .exhaustive();
 }
