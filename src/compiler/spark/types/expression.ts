@@ -17,6 +17,7 @@ export type ScalaExpression =
   | ScalaImportExpression
   | ScalaReturnExpression
   | ScalaTupleExpression
+  | ScalaPartExpression
 
 export interface ScalaVarExpression {
   kind: "ScalaVarExpression";
@@ -114,6 +115,11 @@ export interface ScalaReturnExpression {
 export interface ScalaTupleExpression {
   kind: "ScalaTupleExpression";
   values: ScalaExpression[];
+}
+
+export interface ScalaPartExpression {
+  kind: "ScalaPartExpression";
+  value: ScalaExpression;
 }
 
 export function thisExpression(right: ScalaExpression): ScalaExpression {

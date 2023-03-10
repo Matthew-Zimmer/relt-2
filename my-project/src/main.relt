@@ -16,7 +16,7 @@ model Table2 = {
 postgres $"TABLE_3_OUTPUT"
 model Table3 = 
   | Table1
-	| join Table2
+	| join(id == tid) Table2
   | with {
     fullName = firstName + " " + lastName,
   }

@@ -54,6 +54,7 @@ export function formatScala(x: ScalaExpression | ScalaDefinition | ScalaType): s
         .with([P.select()], x => `tuple1(${helper(x)})`)
         .otherwise(x => `(${x.map(helper).join(', ')})`)
       )
+      .with({ kind: "ScalaPartExpression" }, x => `(${helper(x.value)})`)
       .exhaustive();
   };
 

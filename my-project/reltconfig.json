@@ -1,5 +1,5 @@
 {
-  "name": "my-project",
+  "name": "myProject",
   "aws": {
     "region": "<region>",
     "table": "<dynamo-table-name>",

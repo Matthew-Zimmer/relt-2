@@ -2,9 +2,10 @@ import { Project } from "../../../project";
 import { instructionsFor } from "../../relt/analysis/validInstructions";
 import { vertexInfo } from "../../relt/analysis/vertex";
 import { ReltModelDefinition } from "../../relt/types";
-import { ScalaValExpression, datasetsType, thisExpression, ScalaObjectDefinition, ScalaBinaryOpExpression, ScalaExpression } from "../types";
+import { ScalaValExpression, thisExpression, ScalaObjectDefinition, ScalaBinaryOpExpression, ScalaExpression } from "../types";
 
 export function makeInstructionSet(models: ReltModelDefinition[]): ScalaValExpression {
+  const indices = Object.fromEntries(models.map((x, i) => [x.name, i]));
   return {
     kind: "ScalaValExpression",
     visibility: "private",
@@ -29,28 +30,14 @@ export function makeInstructionSet(models: ReltModelDefinition[]): ScalaValExpre
                 kind: "ScalaStringType"
               },
               {
-                kind: "ScalaOfType",
-                type: {
-                  kind: "ScalaIdentifierType",
-                  name: "Instruction"
-                },
-                of: [{
-                  kind: "ScalaDotType",
-                  left: {
-                    kind: "ScalaIdentifierType",
-                    name: "DeltaTypes"
-                  },
-                  right: {
-                    kind: "ScalaIdentifierType",
-                    name: "Datasets"
-                  }
-                }]
+                kind: "ScalaIdentifierType",
+                name: "Instruction"
               }
             ]
           }
         ],
       },
-      args: models.map(makeInstructionSetForModel),
+      args: models.map(x => makeInstructionSetForModel(x, indices)),
       hints: {
         indent: true,
       }
@@ -58,7 +45,7 @@ export function makeInstructionSet(models: ReltModelDefinition[]): ScalaValExpre
   };
 }
 
-export function makeInstructionSetForModel(model: ReltModelDefinition): ScalaBinaryOpExpression {
+export function makeInstructionSetForModel(model: ReltModelDefinition, indices: Record<string, number>): ScalaBinaryOpExpression {
   return {
     kind: "ScalaBinaryOpExpression",
     left: {
@@ -72,7 +59,7 @@ export function makeInstructionSetForModel(model: ReltModelDefinition): ScalaBin
         kind: "ScalaIdentifierExpression",
         name: "Map"
       },
-      args: instructionsFor(model).map<ScalaExpression>(x => ({
+      args: instructionsFor(model, indices).map<ScalaExpression>(x => ({
         kind: "ScalaBinaryOpExpression",
         left: {
           kind: "ScalaStringExpression",
@@ -113,20 +100,8 @@ export function makeVertices(models: ReltModelDefinition[]): ScalaValExpression 
             kind: "ScalaStringType"
           },
           {
-            kind: "ScalaOfType",
-            type: {
-              kind: "ScalaIdentifierType",
-              name: "Map"
-            },
-            of: [
-              {
-                kind: "ScalaStringType",
-              },
-              {
-                kind: "ScalaIdentifierType",
-                name: "Vertex"
-              }
-            ]
+            kind: "ScalaIdentifierType",
+            name: "Vertex"
           }
         ]
       },
@@ -200,7 +175,6 @@ export function makeDag(): ScalaValExpression {
         func: {
           kind: "ScalaIdentifierExpression",
           name: "Dag",
-          types: [datasetsType()],
         },
         args: [
           thisExpression({ kind: "ScalaIdentifierExpression", name: "vertices" }),
@@ -226,7 +200,6 @@ export function makeInterpreter(): ScalaValExpression {
         func: {
           kind: "ScalaIdentifierExpression",
           name: "Interpreter",
-          types: [datasetsType()],
         },
         args: [
           thisExpression({ kind: "ScalaIdentifierExpression", name: "dag" }),
